@@ -34,7 +34,7 @@ at most three times.
 | 10 | stars, and a spark on the bright ones | `quad`, `atlas` |
 | 20-21 | moon halo, then the moon disc | `glow`, `atlas` |
 | 30-32 | city far, mid, near: wall, roof prop, light rim, cornice, dark seam | `atlas`, `quad` |
-| 40 | ground: grass strip over a dirt body | `atlas` |
+| 40 | ground: grass band, soil, rock footing, blades above the line | `atlas` |
 | 50 | platforms: stone body, then the light cap row | `atlas` |
 | 60 | contact shadow under the hero and every enemy | `atlas` |
 | 61-64 | jet, bombs, enemies, hero | `atlas`, `glow` |
@@ -60,9 +60,10 @@ pixels at the helmet every other stride.
 
 | Tile | Used for |
 |---|---|
-| `grass`, `dirt` | the ground strip and its body |
+| `grass`, `tufts`, `dirt`, `rock` | the ground: grass band, blades above the standable line, soil, rock footing |
 | `stone`, `stoneCap`, `grassCap` | a platform body, its light top edge, a grass edge |
 | `farWallA/B`, `midWallA/B`, `nearWallA/B` | the city layers; two tiles each so no two neighbours share a window grid |
+| `glassMidA/B/C` | the curtain-wall fronts of the mid layer: three pane grids, three sheen phases |
 | `propAntenna`, `propTank`, `propVent` | roof silhouettes |
 | `moon` | the moon disc: sphere shading, maria, craters, alpha outside the disc |
 | `shadow`, `spark` | the contact shadow under an entity, the bright star cross |
@@ -78,6 +79,18 @@ distance for an enemy, so no module keeps animation state.
 
 - One ramp of four shades per material. The ramps are built from `COLOR` in
   [../config.js](../config.js).
+- The ground is three bands whose heights add up to the strip depth: `GRASS_BAND`,
+  `SOIL_BAND` and `ROCK_BAND`. Its tiles are wide on purpose (grass 96 px, soil and
+  rock 192 px): a 16 px tile repeats sixty times across the world and the eye finds
+  the grid, which is what made the soil read as woven cloth.
+- A band must not step to a new shade at one fixed height, and its patches must not
+  be plain rectangles: both read as stacked planks, so the soil is painted as blobs
+  with a jittered span per row.
+- A curtain wall is a reflection, not a light grid. Each pane picks its shade from
+  the sky above, the street below, one sheen band and the reflected horizon; the
+  per-pane noise stays under a third of a shade step. Wider noise turns the front
+  into confetti, and lit panes then read as polka dots. Glass exists in the mid
+  layer only: the near layer carries silhouette, not detail.
 - Each paint job carries a clip box and may only write inside its own atlas cell.
   Before the allocator existed, the stone mortar bled into the dirt cell and made
   the ground read blue.

@@ -196,9 +196,16 @@ export function createRenderer(canvas) {
   function drawSolids(world, cameraX) {
     const ground = world.ground;
     const gx = ground.x - cameraX;
+    // Soil, then the rock footing under it, so the band below the grass has mass.
+    const soilH = Math.min(C.SOIL_BAND, ground.h - C.GRASS_BAND - C.ROCK_BAND);
     rect(LAYER.ground, atlas.tiles.grass, gx, ground.y, ground.w, C.GRASS_BAND);
-    rect(LAYER.ground, atlas.tiles.dirt, gx, ground.y + C.GRASS_BAND, ground.w,
-      ground.h - C.GRASS_BAND);
+    rect(LAYER.ground, atlas.tiles.dirt, gx, ground.y + C.GRASS_BAND, ground.w, soilH);
+    rect(LAYER.ground, atlas.tiles.rock, gx, ground.y + C.GRASS_BAND + soilH, ground.w,
+      ground.h - C.GRASS_BAND - soilH);
+    // Blades rise above the line the feet stand on.
+    const tuft = atlas.tiles.tufts;
+    rect(LAYER.ground, tuft, gx, ground.y - tuft.h, ground.w, tuft.h,
+      tileCount(ground.w, tuft.w), 1);
     for (const platform of world.platforms) {
       const x = platform.x - cameraX;
       if (x + platform.w < 0 || x > C.VIEW_W) continue;

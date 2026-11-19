@@ -55,8 +55,11 @@ export const MOON_R = 44;
 export const PLATFORM_GAP_STEP = 0.9;
 export const PLATFORM_GAP_MIN = 90;
 
-// Band heights: the grass strip on the ground and the cap row on a platform.
-export const GRASS_BAND = 9;
+// Band heights inside the 60 px ground strip (VIEW_H - GROUND_Y): grass on top,
+// soil in the middle, a rock footing at the bottom. The three add up to 60.
+export const GRASS_BAND = 12;
+export const SOIL_BAND = 21;
+export const ROCK_BAND = 27;
 export const CAP_BAND = 5;
 
 // Sprite animation speeds in frames per second (DG-P-10). The run cycle has six
@@ -69,6 +72,13 @@ export const HINT_Y = 74;
 // Parallax factors from DG-P-04. A layer moves at camera * factor.
 export const PARALLAX = { far: 0.15, mid: 0.35, near: 0.6 };
 export const CITY_SEED = 20261119;
+
+// Curtain-wall fronts (DG-P-10). A mid-layer tower of at least GLASS_MIN_H draws
+// one of GLASS_TILES with GLASS_CHANCE, so a few glass skyscrapers stand between
+// the brick towers and the skyline never looks ruled.
+export const GLASS_TILES = ['glassMidA', 'glassMidB', 'glassMidC'];
+export const GLASS_CHANCE = 0.42;
+export const GLASS_MIN_H = 176;
 
 // The DG-P-09 night palette.
 export const COLOR = {
@@ -85,14 +95,26 @@ export const COLOR = {
   window: '#ffc46b',
   windowCool: '#c3d4ff',
   windowDark: '#0d1226',
+  // Near windows sit far from the eye's light source: dimmer and cooler, so the
+  // foreground reads as mass and the mid layer keeps the sparkle.
+  windowNearWarm: '#8d7a58',
+  windowNearCool: '#6c7a99',
   // Three clear value steps: the far layer is hazed and light, the near layer is
   // almost black, so the city reads as depth without any transparency (DG-P-11).
-  wallFar: ['#4a5480', '#3a4368', '#2b3252', '#202744'],
+  wallFar: ['#5a6593', '#48517a', '#38405f', '#2a3149'],
   wallMid: ['#2c3560', '#212a48', '#161d33', '#0f1426'],
-  wallNear: ['#1d2444', '#131a33', '#0b1020', '#060812'],
+  // Four shades for a glass curtain wall: cool sky tones, lightest at the top.
+  // A glass tower is the brightest object inside its own layer, but it stays
+  // under the brightest shade of the layer behind it, so the value order of
+  // DG-P-11 still holds. Glass only exists in the mid layer: the near layer
+  // carries silhouette and no detail.
+  glassMid: ['#545f8b', '#3a4468', '#28304a', '#171c2e'],
+  // The near layer carries silhouette, not detail: it stays dark and nearly blind
+  // so the mid layer keeps the window pattern and the eye has a place to rest.
+  wallNear: ['#1c2342', '#141a33', '#0d1226', '#070a17'],
   edgeLightFar: '#6a76a8',
   edgeLightMid: '#3d4878',
-  edgeLightNear: '#2b3459',
+  edgeLightNear: '#3f4a7a',
   edgeDark: '#04060f',
   farEdge: '#3a4272',
   midEdge: '#242d54',
@@ -113,10 +135,10 @@ export const COLOR = {
   jetDark: '#5d7fa8',
   // Material ramps for the atlas (DG-P-10). Four shades of one hue each, light
   // to dark. render/textures.js builds the ramps from these values.
-  grassLight: '#63a55c',
-  grass: '#3d7c46',
-  grassDark: '#265429',
-  grassDeep: '#16341f',
+  grassLight: '#5b9557',
+  grass: '#39703f',
+  grassDark: '#254f2c',
+  grassDeep: '#15301e',
   dirtLight: '#5a4130',
   dirt: '#43301f',
   dirtDark: '#332316',
@@ -128,9 +150,13 @@ export const COLOR = {
   stoneCapLight: '#6f7aab',
   stoneCapMid: '#414a6c',
   stoneCapDark: '#232a40',
-  grassCapLight: '#7cb86b',
-  grassCapMid: '#417f47',
-  grassCapDark: '#1d4527',
+  // Four shades for the rock footing under the soil. It stays darker than the
+  // platform stone: a bright masonry band at the bottom would compete with the
+  // lit city behind it.
+  rockFooting: ['#3e4666', '#333b57', '#282e45', '#161a27'],
+  grassCapLight: '#6ba265',
+  grassCapMid: '#3b7040',
+  grassCapDark: '#1c4125',
   propSteel: '#232a40',
   propSteelLight: '#3a4272',
   bombBody: '#ffd23f',

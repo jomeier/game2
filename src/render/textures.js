@@ -89,8 +89,8 @@ function paintGrass(buf, x0, y0, w, h, ramp, seed) {
   const random = seeded(seed);
   const noise = Array.from({ length: w }, () => random());
   for (let x = 0; x < w; x += 1) {
-    // Blade height varies by one pixel, and the tip line stays inside the tile.
-    const tip = 1 + (noise[x] > 0.62 ? 1 : 0);
+    // Tips vary over three rows, so the top edge is ragged instead of ruled.
+    const tip = noise[x] > 0.78 ? 0 : noise[x] > 0.42 ? 1 : 2;
     for (let y = 0; y < h; y += 1) {
       let color = ramp[2];
       if (y < tip) color = ramp[0];
@@ -98,44 +98,120 @@ function paintGrass(buf, x0, y0, w, h, ramp, seed) {
       else if (y > h - 2) color = ramp[3];
       buf.set(x0 + x, y0 + y, color);
     }
-    if (noise[(x + 3) % w] > 0.9) buf.set(x0 + x, y0 + tip + 1, ramp[0]);
+    if (noise[(x + 3) % w] > 0.88) buf.set(x0 + x, y0 + tip + 1, ramp[0]);
   }
-  for (let i = 0; i < 6; i += 1) {
-    buf.set(x0 + Math.floor(random() * w), y0 + 2 + Math.floor(random() * (h - 4)), ramp[0]);
+  // A shade band under the tips separates grass from the soil below it.
+  buf.fill(x0, y0 + h - 2, w, 2, ramp[3]);
+  for (let i = 0; i < 8; i += 1) {
+    buf.set(x0 + Math.floor(random() * w), y0 + 2 + Math.floor(random() * (h - 5)), ramp[0]);
   }
 }
 
-/** Paint a tileable dirt body: strata bands, pebbles with a lit top, thin roots. */
+/** Paint a tileable dirt body: broad tonal patches, pebbles, a few thin roots.
+ * A tone that steps at one fixed height reads as two stacked planks, so the
+ * depth comes from patches that cross the middle instead of from a gradient.
+ */
 function paintDirt(buf, x0, y0, w, h, ramp, seed) {
   const random = seeded(seed);
-  for (let y = 0; y < h; y += 1) {
-    // The body darkens toward the bottom, so the strip reads as depth, not noise.
-    const deep = y > h * 0.55 ? 1 : 0;
-    const band = ramp[Math.min(3, (y % 5 === 0 ? 2 : y % 3 === 0 ? 3 : 1) + deep)];
-    for (let x = 0; x < w; x += 1) {
-      buf.set(x0 + x, y0 + y, random() > 0.88 ? ramp[0] : band);
+  // A patch is a stack of spans with a jittered width. Plain rectangles would
+  // read as parquet flooring, so every edge is ragged.
+  const blob = (px, py, pw, ph, tone) => {
+    for (let row = 0; row < ph; row += 1) {
+      const span = Math.max(2, pw - Math.floor(random() * 6));
+      const sx = px + Math.floor((pw - span) / 2) + Math.floor(random() * 3) - 1;
+      const sy = py + row;
+      if (sy >= h) break;
+      for (const shift of [0, -w, w]) buf.fill(x0 + sx + shift, y0 + sy, span, 1, tone);
+    }
+  };
+  buf.fill(x0, y0, w, h, ramp[1]);
+  // Broad patches of the neighbouring tones, laid over the whole height so no
+  // horizontal line survives.
+  for (let i = 0; i < 26; i += 1) {
+    blob(Math.floor(random() * w), Math.floor(random() * h),
+      11 + Math.floor(random() * 18), 5 + Math.floor(random() * 10),
+      random() > 0.55 ? ramp[2] : ramp[0]);
+  }
+  // Extra dark patches below the middle, so the strip still reads as depth.
+  for (let i = 0; i < 9; i += 1) {
+    blob(Math.floor(random() * w), Math.floor(h * 0.55) + Math.floor(random() * h * 0.4),
+      14 + Math.floor(random() * 20), 4 + Math.floor(random() * 7), ramp[2]);
+  }
+  buf.fill(x0, y0, w, 1, ramp[3]);   // dark contact line right under the grass
+  // Pebbles: a lit top and a dark seat so they sit inside the soil.
+  for (let i = 0; i < 7; i += 1) {
+    const size = 2 + Math.floor(random() * 3);
+    const px = Math.floor(random() * w);
+    const py = 3 + Math.floor(random() * (h - 7));
+    for (const shift of [0, -w, w]) {
+      buf.fill(x0 + px + shift, y0 + py, size, size - 1, ramp[2]);
+      buf.fill(x0 + px + shift, y0 + py, size, 1, ramp[0]);
+      buf.fill(x0 + px + shift, y0 + py + size - 1, size, 1, ramp[3]);
     }
   }
-  // A strata line every sixth row gives the strip a readable structure.
-  for (let y = 5; y < h; y += 6) {
-    buf.fill(x0, y0 + y, w, 1, ramp[3]);
-    buf.fill(x0, y0 + y + 1, w, 1, ramp[2]);
-  }
+  // Roots hang from the grass line only, so the soil below stays calm.
   for (let i = 0; i < 5; i += 1) {
-    const px = Math.floor(random() * (w - 4));
-    const py = 2 + Math.floor(random() * (h - 5));
-    const size = 3 + Math.floor(random() * 2);
-    buf.fill(x0 + px, y0 + py, size, size, ramp[2]);
-    buf.fill(x0 + px, y0 + py, size, 1, ramp[0]);
-    buf.set(x0 + px, y0 + py + size, ramp[3]);
-  }
-  for (let i = 0; i < 4; i += 1) {
     let px = Math.floor(random() * w);
-    let py = Math.floor(random() * (h - 6));
-    for (let s = 0; s < 5; s += 1) {
-      buf.set(x0 + px, y0 + py, ramp[3]);
+    for (let s = 0; s < 2 + Math.floor(random() * 4); s += 1) {
+      buf.set(x0 + (px % w), y0 + 1 + s, ramp[3]);
       px += random() > 0.5 ? 1 : -1;
-      py += 1;
+    }
+  }
+}
+
+/** Paint the rock footing under the soil: irregular cobbles, lit back, dark seat.
+ * The band below the grass would otherwise read as one flat empty strip. The
+ * courses are not a brick grid: widths and row heights vary, and the tone stays
+ * below the platform stone, so the ground does not compete with the city.
+ */
+function paintRockLayer(buf, x0, y0, w, h, soil, stone, seed) {
+  const random = seeded(seed);
+  buf.fill(x0, y0, w, h, stone[3]);
+  buf.fill(x0, y0, w, 1, soil[3]);   // dark contact line where the soil sits
+  let y = 1;
+  while (y < h - 3) {
+    const rowH = 5 + Math.floor(random() * 3);   // courses differ in height
+    let bx = -Math.floor(random() * 9);
+    while (bx < w) {
+      const cw = 8 + Math.floor(random() * 8);
+      // A third of the stones sits one pixel lower, so no two courses align.
+      const ch = Math.min(rowH - (random() > 0.66 ? 1 : 0), h - 1 - y);
+      const tone = stone[1 + (random() > 0.62 ? 1 : 0)];
+      // Drawn twice: a cobble that crosses the right edge continues on the left,
+      // so the courses close seamlessly where the tile repeats.
+      for (const cx of [x0 + bx, x0 + bx - w]) {
+        buf.fill(cx, y0 + y, cw, ch, tone);           // the body fills the row
+        // Only some stones catch the light, and not across their whole back:
+        // a lit line on every stone is what turns a wall into a brick grid.
+        if (random() > 0.45) {
+          buf.fill(cx, y0 + y, Math.max(2, cw - Math.floor(random() * 4)), 1, stone[0]);
+        }
+        buf.fill(cx + cw - 1, y0 + y, 1, ch, stone[2]);   // shaded nose
+        if (random() > 0.72) {
+          buf.set(cx + Math.floor(random() * cw), y0 + y + Math.floor(random() * ch), stone[3]);
+        }
+      }
+      bx += cw + 1;                                     // one pixel of mortar
+    }
+    y += rowH + 1;
+  }
+}
+
+/** Paint grass blades in clumps, rising above the line the feet stand on.
+ * One blade every few pixels would stand as a comb and hide the ground line, so
+ * the clumps are separated by bare ground.
+ */
+function paintTufts(buf, x0, y0, w, h, ramp, seed) {
+  const random = seeded(seed);
+  for (let i = 0; i < 7; i += 1) {
+    const start = Math.floor(random() * w);
+    const spread = 3 + Math.floor(random() * 5);
+    for (let c = 0; c < spread; c += 1) {
+      if (random() > 0.75) continue;                    // a lean blade, not a wall
+      const x = (start + c) % w;
+      const height = 2 + Math.floor(random() * (h - 1));
+      buf.fill(x0 + x, y0 + h - height, 1, height, random() > 0.5 ? ramp[0] : ramp[1]);
+      buf.set(x0 + x, y0 + h - height, ramp[0]);        // a lit tip
     }
   }
 }
@@ -206,77 +282,155 @@ function paintFacade(buf, x0, y0, w, h, wall, glass, seed, litChance, bay, shift
   }
 }
 
-/** Paint a roof prop silhouette: antenna, water tank, or vent stack. */
-function paintProp(buf, x0, y0, w, h, color, kind) {
-  if (kind === 'antenna') {
-    buf.fill(x0 + Math.floor(w / 2), y0, 1, h, color);
-    buf.fill(x0 + Math.floor(w / 2) - 2, y0 + 2, 5, 1, color);
-    buf.set(x0 + Math.floor(w / 2), y0, '#ff6b5e');
-  } else if (kind === 'tank') {
-    buf.fill(x0 + 2, y0 + 2, w - 4, h - 2, color);
-    buf.fill(x0 + 2, y0 + 2, w - 4, 1, '#3a4272');
-    buf.fill(x0 + 3, y0 + h, 1, 1, color);
-    buf.fill(x0 + w - 4, y0 + h, 1, 1, color);
-  } else {
-    buf.fill(x0 + 3, y0 + 3, 4, h - 3, color);
-    buf.fill(x0 + 2, y0 + 2, 6, 1, '#3a4272');
-  }
-}
-
-/** Paint a real moon: spherical shading, maria, craters with lit rims. */
-function paintMoon(buf, x0, y0, size, ramp, seed) {
+/** Paint a glass curtain wall: a mullion grid whose panes reflect the sky.
+ * A pane picks its shade from a reflection value: bright where the sky is, dark
+ * toward the street, plus a sheen band that crosses the front on a diagonal.
+ * Without that band every tower shows the same flat gradient, which is what makes
+ * a curtain wall boring. Some panes hold a closed blind, a few hold a light, so
+ * the wall reads as a building and not as a mirror.
+ */
+function paintGlassFront(buf, x0, y0, w, h, ramp, glass, seed, litChance, bay, phase) {
   const random = seeded(seed);
-  const r = size / 2;
-  for (let y = 0; y < size; y += 1) {
-    for (let x = 0; x < size; x += 1) {
-      const dx = x + 0.5 - r;
-      const dy = y + 0.5 - r;
-      const dist = Math.hypot(dx, dy);
-      if (dist > r) continue;                      // outside the disc stays clear
-      // The surface normal of a sphere gives the light falloff toward the rim.
-      const z = Math.sqrt(Math.max(0, r * r - dist * dist)) / r;
-      const light = z * 1.05 - (dx / r) * 0.22 - 0.06;
-      const grain = random() * 0.12;
-      buf.set(x0 + x, y0 + y, ramp.pick(light + grain), Math.round(255 * Math.min(1, z * 8 + 0.4)));
-    }
-  }
-  // Maria: broad flat dark seas on the lit face.
-  for (let i = 0; i < 7; i += 1) {
-    const cx = r + (random() - 0.5) * r * 1.1;
-    const cy = r + (random() - 0.5) * r * 1.1;
-    const rad = 3 + random() * 7;
-    for (let y = 0; y < size; y += 1) {
-      for (let x = 0; x < size; x += 1) {
-        const d = Math.hypot(x + 0.5 - cx, y + 0.5 - cy);
-        if (d > rad || Math.hypot(x + 0.5 - r, y + 0.5 - r) > r - 1) continue;
-        const at = ((y0 + y) * buf.width + (x0 + x)) * 4;
-        const mix = 0.55 * (1 - d / rad);
-        buf.image.data[at] = Math.round(buf.image.data[at] * (1 - mix) + ramp.dark[0] * mix);
-        buf.image.data[at + 1] = Math.round(buf.image.data[at + 1] * (1 - mix) + ramp.dark[1] * mix);
-        buf.image.data[at + 2] = Math.round(buf.image.data[at + 2] * (1 - mix) + ramp.dark[2] * mix);
+  buf.fill(x0, y0, w, h, ramp[3]);                    // the mullion field
+  const pane = bay - 1;                               // one pixel of mullion between
+  for (let fy = 0; fy + bay <= h; fy += bay) {
+    for (let fx = 0; fx + bay <= w; fx += bay) {
+      const u = (fx + 0.5) / w;
+      const v = (fy + 0.5) / h;
+      const sky = 1 - v * 0.8;                        // sky above, street below
+      const sheen = Math.max(0, 1 - Math.abs(u * 0.9 + v * 0.9 - phase) / 0.34);
+      // A curtain wall mirrors the bright band at the horizon, so one row of panes
+      // across the front carries it. Without that band the glass stays flat and
+      // reads as a dull wall next to the lit brick towers.
+      const horizon = Math.max(0, 1 - Math.abs(v - (0.34 + phase * 0.22)) / 0.09);
+      // The reflection has to walk over all four shades from the roof to the
+      // street, and it has to stay louder than the per-pane noise: a wide noise
+      // term turns a curtain wall into confetti and the reflection is gone.
+      const value = random() > 0.93 ? 0.08
+        : sky * 0.72 + sheen * 0.5 + horizon * 0.5 + random() * 0.08;
+      const shade = Math.max(0, Math.min(3, 3 - Math.floor(value * 3.99)));
+      const px = x0 + fx;
+      const py = y0 + fy;
+      if (random() < litChance) {
+        // Mostly a cool lamp behind the glass: warm panes in a grid read as a
+        // polka-dot pattern, because the eye links them into rows.
+        buf.fill(px, py, pane, pane, random() > 0.35 ? glass[1] : glass[0]);
+        buf.fill(px, py, pane, 1, glass[1]);          // the frame above a lit pane
+      } else {
+        buf.fill(px, py, pane, pane, ramp[shade]);
+        // One lighter pixel along the top is what sells the grid as glass.
+        buf.fill(px, py, pane, 1, ramp[Math.max(0, shade - 1)]);
+        if (shade === 0) buf.set(px, py, glass[3]);   // a glint on the brightest pane
       }
     }
   }
-  // Craters: dark floor, a lit rim on the sun side, a bright ejecta line.
-  for (let i = 0; i < 26; i += 1) {
-    const angle = random() * Math.PI * 2;
-    const dist = Math.sqrt(random()) * (r - 3);
-    const cx = r + Math.cos(angle) * dist;
-    const cy = r + Math.sin(angle) * dist;
-    const rad = 1 + random() * 3.2;
+}
+
+/** Paint a roof prop: a mast with a light, a tank on legs, or a capped vent.
+ * Each one stands on the roof line and holds to it with legs or a base, so it
+ * never reads as a box floating above the building. */
+function paintProp(buf, x0, y0, w, h, color, shine, kind) {
+  if (kind === 'antenna') {
+    const mid = Math.floor(w / 2);
+    buf.fill(x0 + mid, y0 + 1, 1, h - 1, color);
+    buf.fill(x0 + mid - 2, y0 + 3, 5, 1, color);
+    buf.fill(x0 + mid - 1, y0 + 6, 3, 1, color);
+    buf.set(x0 + mid, y0, shine);
+  } else if (kind === 'tank') {
+    const left = 3;
+    const bodyW = w - 2 * left;
+    buf.fill(x0 + left, y0 + 2, bodyW, 6, color);
+    buf.fill(x0 + left, y0 + 2, bodyW, 1, shine);           // rim light on the band
+    buf.fill(x0 + left + 1, y0 + 1, bodyW - 2, 1, color);   // the lid
+    buf.fill(x0 + left, y0 + 8, 1, h - 8, color);           // legs down to the roof
+    buf.fill(x0 + w - left - 1, y0 + 8, 1, h - 8, color);
+  } else {
+    buf.fill(x0 + 3, y0 + 4, 5, h - 4, color);
+    buf.fill(x0 + 2, y0 + 3, 7, 1, shine);                  // cap catches the light
+    buf.fill(x0 + 4, y0 + 6, 3, 1, shine);
+  }
+}
+
+/** Paint a real moon as a lit sphere with seas and a few large craters.
+ * The disc is only 64 pixels wide, so detail has to be sparse and generous: small
+ * craters turn into confetti and per-pixel grain turns into noise. Light comes from
+ * the upper left. A crater gets a shadowed wall on the light side and a lit rim on
+ * the far side, which is what reads as a hollow at this size.
+ */
+function paintMoon(buf, x0, y0, size, ramp, seed) {
+  const random = seeded(seed);
+  const r = size / 2;
+  const at = (x, y) => ((y0 + y) * buf.width + (x0 + x)) * 4;
+  const read = (x, y) => { const i = at(x, y); return [buf.image.data[i], buf.image.data[i+1], buf.image.data[i+2]]; };
+  const write = (x, y, c) => { const i = at(x, y); buf.image.data[i]=c[0]; buf.image.data[i+1]=c[1]; buf.image.data[i+2]=c[2]; };
+  const onDisc = (x, y) => Math.hypot(x + 0.5 - r, y + 0.5 - r) <= r - 0.5;
+  const tones = ramp.shades;   // 0 lightest .. 3 darkest
+
+  // 1) the sphere: one clear tone per band, brightest at the light, dark at the limb
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const dx = (x + 0.5 - r) / r;
+      const dy = (y + 0.5 - r) / r;
+      const dist = Math.hypot(dx, dy);
+      if (dist > 1) continue;
+      const z = Math.sqrt(Math.max(0, 1 - dist * dist));
+      // 1 at the sub-solar point, low at the limb and on the night side
+      const light = 0.24 + 0.92 * z - 0.24 * dx - 0.13 * dy;
+      const stufe = 3 - Math.max(0, Math.min(3, Math.floor(light * 3.2)));
+      buf.set(x0 + x, y0 + y, tones[stufe],
+        Math.round(255 * Math.min(1, (1 - dist) * 14 + 0.5)));
+    }
+  }
+
+  // 2) three seas: large, soft, and clearly darker than the highland tone
+  const sea = tones[2];
+  for (let i = 0; i < 3; i += 1) {
+    const cx = r + (random() - 0.5) * r * 0.95;
+    const cy = r + (random() - 0.5) * r * 0.8;
+    const rad = 10 + random() * 6;
+    for (let y = Math.floor(cy - rad); y <= cy + rad; y += 1) {
+      for (let x = Math.floor(cx - rad); x <= cx + rad; x += 1) {
+        if (!onDisc(x, y)) continue;
+        const d = Math.hypot(x + 0.5 - cx, y + 0.5 - cy) / rad;
+        if (d > 1) continue;
+        // a dithered edge keeps the sea soft without smearing the tone
+        if (d > 0.72 && random() > (1 - d) / 0.28) continue;
+        write(x, y, mixTone(read(x, y), sea, 0.55));
+      }
+    }
+  }
+
+  // 3) eight craters, each a shadowed wall and a lit rim
+  for (let i = 0; i < 8; i += 1) {
+    const place = Math.sqrt(random()) * (r - 7);
+    const cx = r + Math.cos(random() * Math.PI * 2) * place;
+    const cy = r + Math.sin(random() * Math.PI * 2) * place;
+    const rad = 3 + random() * 2.5;
     for (let y = Math.floor(cy - rad - 1); y <= cy + rad + 1; y += 1) {
       for (let x = Math.floor(cx - rad - 1); x <= cx + rad + 1; x += 1) {
-        const d = Math.hypot(x + 0.5 - cx, y + 0.5 - cy);
-        if (d > rad + 0.6 || Math.hypot(x + 0.5 - r, y + 0.5 - r) > r - 1) continue;
-        if (d > rad - 0.4) {
-          const litSide = (cx - r) * -1 + (cy - r) * -0.4 > 0 ? 1 : 0;
-          buf.set(x0 + x, y0 + y, litSide ? ramp.rim : ramp.shade);
-        } else {
-          buf.set(x0 + x, y0 + y, ramp.floor);
+        if (!onDisc(x, y)) continue;
+        const ox = x + 0.5 - cx;
+        const oy = y + 0.5 - cy;
+        const d = Math.hypot(ox, oy);
+        if (d > rad + 0.8) continue;
+        const farSide = ox + oy > 0;                  // light from the upper left
+        if (d > rad - 0.6) {
+          write(x, y, farSide ? tones[1] : tones[3]);  // one pixel of rim or shade
+        } else if (d > rad * 0.45) {
+          write(x, y, farSide ? tones[2] : tones[2]);
         }
       }
     }
   }
+}
+
+/** Return a blend of two [r,g,b] tones, share of b in 0..1. */
+function mixTone(a, b, share) {
+  return [
+    Math.round(a[0] * (1 - share) + b[0] * share),
+    Math.round(a[1] * (1 - share) + b[1] * share),
+    Math.round(a[2] * (1 - share) + b[2] * share),
+  ];
 }
 
 /** Paint a soft elliptical ground shadow for an entity. */
@@ -301,11 +455,12 @@ function paintHero(buf, x0, y0, pose, colors) {
   const { body, light, mid, dark, outline, visor } = colors;
   const bob = pose.bob;
   const cx = 13;
-  buf.fill(x0 + cx - 6, y0 + 0, 12, 12, outline);            // head shell
-  buf.fill(x0 + cx - 5, y0 + 1, 10, 10, body);
-  buf.fill(x0 + cx - 5, y0 + 1, 10, 2, light);               // top of the helmet
-  buf.fill(x0 + cx - 4, y0 + 4, 8, 3, visor);                // visor band
-  buf.set(x0 + cx + 2, y0 + 4, light);
+  buf.fill(x0 + cx - 5, y0 + 0, 10, 11, outline);            // head shell
+  buf.fill(x0 + cx - 4, y0 + 1, 8, 9, body);
+  buf.fill(x0 + cx - 4, y0 + 1, 8, 2, light);                // top of the helmet
+  buf.fill(x0 + cx - 3, y0 + 4, 6, 3, visor);                // visor band
+  buf.set(x0 + cx + 1, y0 + 4, light);
+  buf.fill(x0 + cx - 2, y0 + 11, 4, 2, dark);                // neck sets head off torso
   buf.fill(x0 + cx - 5, y0 + 12, 10, 13, outline);           // torso
   buf.fill(x0 + cx - 4, y0 + 13 + bob, 8, 11, mid);
   buf.fill(x0 + cx - 4, y0 + 13 + bob, 8, 2, body);
@@ -313,7 +468,7 @@ function paintHero(buf, x0, y0, pose, colors) {
   // Backpack on the back side, arms swing with the legs.
   buf.fill(x0 + cx - 8, y0 + 13 + bob, 3, 8, dark);
   buf.fill(x0 + cx + pose.armX - 1, y0 + 14 + bob, 3, 7, body);
-  buf.fill(x0 + cx + pose.armX - 1, y0 + 20 + bob, 3, 2, light);
+  buf.fill(x0 + cx + pose.armX - 1, y0 + 20 + bob, 3, 2, body);
   // Two legs, each lifted by its own phase.
   buf.fill(x0 + cx - 4 + pose.legA, y0 + 24 + bob, 4, 8 - pose.legLiftA, mid);
   buf.fill(x0 + cx - 4 + pose.legA, y0 + 30 + bob - pose.legLiftA, 5, 3, dark);
@@ -344,9 +499,11 @@ function paintBlob(buf, x0, y0, frame, colors, dir) {
   buf.fill(x0 + 2, y + 1, w - 4, h - 1, body);
   buf.fill(x0 + 2, y + 1, w - 4, 3, light);
   buf.fill(x0 + 2, y + h - 5, w - 4, 4, dark);
-  // One small spike on the back, so the head stays a clean round shape.
-  const spikeX = dir > 0 ? 3 : w - 5;
-  buf.fill(x0 + spikeX, y - 0, 2, 2, dark);
+  // Round the top corners so the body reads as a creature rather than a tile.
+  buf.set(x0 + 1, y, outline);
+  buf.set(x0 + w - 2, y, outline);
+  buf.fill(x0 + 2, y, 1, 1, outline);
+  buf.fill(x0 + w - 3, y, 1, 1, outline);
   const eyeX = dir > 0 ? w - 9 : 5;
   buf.fill(x0 + eyeX, y + 5, 4, 4, outline);
   buf.fill(x0 + eyeX + 1, y + 6, 2, 2, eye);
@@ -458,6 +615,8 @@ const RAMPS = {
   grass: makeRamp([P.grassLight, P.grass, P.grassDark, P.grassDeep]),
   dirt: makeRamp([P.dirtLight, P.dirt, P.dirtDark, P.dirtDeep]),
   stone: makeRamp([P.stoneLight, P.stone, P.stoneDark, P.stoneDeep]),
+  footing: makeRamp(P.rockFooting),
+  glassMid: makeRamp(P.glassMid),
   far: makeRamp(P.wallFar),
   mid: makeRamp(P.wallMid),
   near: makeRamp(P.wallNear),
@@ -465,7 +624,10 @@ const RAMPS = {
 };
 
 // Index order matters: paintFacade reads [lit warm, lit cool, unlit, frame].
+// Index order matters: paintFacade reads [lit warm, lit cool, unlit, frame].
 const GLASS = [rgb(P.window), rgb(P.windowCool), rgb(P.windowDark), rgb(P.propSteelLight)];
+const GLASS_NEAR = [rgb(P.windowNearWarm), rgb(P.windowNearCool), rgb(P.windowDark),
+  rgb(P.propSteelLight)];
 const HERO = {
   body: rgb(P.heroBody), light: rgb(P.heroLight), mid: rgb(P.heroMid),
   dark: rgb(P.heroDark), outline: rgb(P.spriteOutline), visor: rgb(P.heroVisor),
@@ -543,8 +705,11 @@ function paintAtlas() {
   }
 
   // Materials: grass and dirt for the ground, stone and its cap for platforms.
-  put('grass', 16, 8, (b, x, y, w, h) => paintGrass(b, x, y, w, h, RAMPS.grass.shades, 11));
-  put('dirt', 16, 16, (b, x, y, w, h) => paintDirt(b, x, y, w, h, RAMPS.dirt.shades, 23));
+  put('grass', 96, 12, (b, x, y, w, h) => paintGrass(b, x, y, w, h, RAMPS.grass.shades, 11));
+  put('tufts', 96, 6, (b, x, y, w, h) => paintTufts(b, x, y, w, h, RAMPS.grass.shades, 17));
+  put('dirt', 192, 48, (b, x, y, w, h) => paintDirt(b, x, y, w, h, RAMPS.dirt.shades, 23));
+  put('rock', 192, 27, (b, x, y, w, h) => paintRockLayer(b, x, y, w, h, RAMPS.dirt.shades,
+    RAMPS.footing.shades, 29));
   put('stone', 32, 16, (b, x, y, w, h) => paintStone(b, x, y, w, h, RAMPS.stone.shades, 37));
   put('stoneCap', 32, 4, (b, x, y, w, h) => paintCap(b, x, y, w, h,
     rgb(P.stoneCapLight), rgb(P.stoneCapMid), rgb(P.stoneCapDark)));
@@ -557,18 +722,35 @@ function paintAtlas() {
     ['farWallB', RAMPS.far.shades, 47, 0.24, 8, 5],
     ['midWallA', RAMPS.mid.shades, 53, 0.17, 8, 1],
     ['midWallB', RAMPS.mid.shades, 59, 0.13, 8, 5],
-    ['nearWallA', RAMPS.near.shades, 67, 0.08, 8, 1],
-    ['nearWallB', RAMPS.near.shades, 71, 0.05, 8, 5],
+    ['nearWallA', RAMPS.near.shades, 67, 0.045, 8, 1, GLASS_NEAR],
+    ['nearWallB', RAMPS.near.shades, 71, 0.03, 8, 5, GLASS_NEAR],
   ];
-  for (const [name, ramp, seed, lit, bay, shift] of facades) {
-    put(name, 16, 32, (b, x, y, w, h) => paintFacade(b, x, y, w, h, ramp, GLASS, seed, lit, bay, shift));
+  for (const [name, ramp, seed, lit, bay, shift, glass] of facades) {
+    put(name, 16, 32, (b, x, y, w, h) => paintFacade(b, x, y, w, h, ramp, glass || GLASS,
+      seed, lit, bay, shift));
+  }
+
+  // Three curtain-wall fronts for the mid layer. They differ in pane grid, in
+  // how many lights are on, and in where the sheen band falls, so two glass
+  // towers next to each other never show the same front.
+  const glassFronts = [
+    ['glassMidA', 16, 32, 83, 0.025, 4, 0.62],
+    ['glassMidB', 24, 32, 89, 0.02, 8, 1.15],
+    ['glassMidC', 20, 40, 97, 0.03, 5, 0.3],
+  ];
+  for (const [name, tw, th, seed, lit, bay, phase] of glassFronts) {
+    // The dim window palette: a curtain wall reflects the sky, so its own lights
+    // stay quiet next to the bright panes.
+    put(name, tw, th, (b, x, y, w, h) => paintGlassFront(b, x, y, w, h,
+      RAMPS.glassMid.shades, GLASS_NEAR, seed, lit, bay, phase));
   }
 
   // Roof props for the skyline silhouette.
   const steel = rgb(P.propSteel);
-  put('propAntenna', 12, 14, (b, x, y, w, h) => paintProp(b, x, y, w, h, steel, 'antenna'));
-  put('propTank', 12, 12, (b, x, y, w, h) => paintProp(b, x, y, w, h, steel, 'tank'));
-  put('propVent', 12, 12, (b, x, y, w, h) => paintProp(b, x, y, w, h, steel, 'vent'));
+  const shine = rgb(P.propSteelLight);
+  put('propAntenna', 12, 15, (b, x, y, w, h) => paintProp(b, x, y, w, h, steel, rgb(P.beacon), 'antenna'));
+  put('propTank', 14, 13, (b, x, y, w, h) => paintProp(b, x, y, w, h, steel, shine, 'tank'));
+  put('propVent', 12, 12, (b, x, y, w, h) => paintProp(b, x, y, w, h, steel, shine, 'vent'));
 
   // The moon: a shaded sphere with maria and craters, alpha outside the disc.
   put('moon', 64, 64, (b, x, y, w) => paintMoon(b, x, y, w, RAMPS.moon, 71));

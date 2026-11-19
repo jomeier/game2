@@ -47,10 +47,13 @@ The game is a 2D platformer. It runs in the browser. It uses JavaScript and WebG
 3. The game uses three layers or more.
 4. The three city layers are fully opaque. The moon and stars never show through buildings.
 5. The game draws city layers, platforms, and entities from 2D textures. It does not use flat color rectangles for them.
-6. The ground shows a grass strip on top and a dirt body below it. A floating
+6. The ground shows three bands from the top: a grass strip, a soil body, and a rock
+   footing. Grass blades rise above the line the player stands on. A floating
    platform shows stone with visible block joints and a light top edge.
 7. The three city layers show building façades with window rows. Windows are lit
-   in the far layer most of all and in the near layer least of all.
+   in the far layer most of all and in the near layer least of all. A few of the
+   tall mid-layer towers wear a glass curtain wall instead: its panes reflect the
+   sky, and the choice is random, so the skyline never looks ruled.
 8. The moon is a disc with dark seas and craters. It has a round edge, not a
    square one.
 
@@ -78,6 +81,7 @@ The game is a 2D platformer. It runs in the browser. It uses JavaScript and WebG
 1. A test script starts the game in a headless browser.
 2. The script presses keys and checks the game state.
 3. The script saves screenshots to `shots/`.
-4. The script also checks pixels: the grass strip, the dirt body, the stone of a
-   platform, the lit windows of a city layer, the round edge of the moon, and the
-   frames of the player sprite.
+4. The script also checks pixels: the three ground bands, the stone of a platform,
+   the lit windows of a city layer, the round edge of the moon, and the frames of
+   the player sprite. It also checks the city layout itself: which towers wear a
+   glass front and how they are spread over the level.

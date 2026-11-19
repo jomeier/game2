@@ -10,6 +10,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import puppeteer from 'puppeteer-core';
 import { decodePngFile, pixel } from './png-decode.mjs';
+import * as C from '../src/config.js';
+import { buildCity } from '../src/render/background.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SHOTS = path.join(ROOT, 'shots');
@@ -48,6 +50,13 @@ function readPalette() {
       window.__gameConfig.COLOR.dirtDark, window.__gameConfig.COLOR.dirtDeep],
     stone: [window.__gameConfig.COLOR.stoneLight, window.__gameConfig.COLOR.stone,
       window.__gameConfig.COLOR.stoneDark, window.__gameConfig.COLOR.stoneDeep],
+    footing: window.__gameConfig.COLOR.rockFooting,
+    bands: {
+      groundY: window.__gameConfig.GROUND_Y,
+      grass: window.__gameConfig.GRASS_BAND,
+      soil: window.__gameConfig.SOIL_BAND,
+      rock: window.__gameConfig.ROCK_BAND,
+    },
   };
 }
 const state = (page) => page.evaluate(() => window.__game.state);
@@ -361,10 +370,20 @@ async function caseMaterials(page) {
   const grass = cfg.grass.map(hexToRgb);
   const dirt = cfg.dirt.map(hexToRgb);
   const stone = cfg.stone.map(hexToRgb);
-  const grassCount = grass.reduce((sum, c) => sum + countNear(image, 120, 481, 700, 6, c, 40), 0);
-  const dirtCount = dirt.reduce((sum, c) => sum + countNear(image, 120, 505, 700, 30, c, 40), 0);
+  const footing = cfg.footing.map(hexToRgb);
+  const soilTop = cfg.bands.groundY + cfg.bands.grass;
+  const rockTop = soilTop + cfg.bands.soil;
+  // Each band is read inside its own height, so a band cannot borrow the pixels
+  // of its neighbour through a wide tolerance.
+  const grassCount = grass.reduce((sum, c) => sum + countNear(image, 120, cfg.bands.groundY,
+    700, cfg.bands.grass - 1, c, 40), 0);
+  const dirtCount = dirt.reduce((sum, c) => sum + countNear(image, 120, soilTop,
+    700, cfg.bands.soil - 1, c, 40), 0);
+  const rockCount = footing.reduce((sum, c) => sum + countNear(image, 120, rockTop,
+    700, cfg.bands.rock, c, 26), 0);
   if (grassCount < 400) throw new Error(`only ${grassCount} grass pixels on the ground strip`);
   if (dirtCount < 400) throw new Error(`only ${dirtCount} dirt pixels under the grass strip`);
+  if (rockCount < 400) throw new Error(`only ${rockCount} rock pixels in the footing band`);
   const platform = st.platforms.find((p) => p.x > 60 && p.x + p.w < 900);
   if (!platform) throw new Error('no platform on screen to read');
   const left = platform.x - cameraOf(st.player.x);
@@ -390,6 +409,40 @@ async function caseCityWindows(page) {
     throw new Error(`lit share does not fall to the front: ${(far.density * 100).toFixed(1)}% / `
       + `${(mid.density * 100).toFixed(1)}% / ${(near.density * 100).toFixed(1)}%`);
   }
+}
+
+/** A few mid-layer towers wear a glass front: random, tall, and all three tiles. */
+async function caseCityGlass() {
+  const layers = buildCity(C.CITY_SEED, C.LEVEL_WIDTH);
+  const mid = layers[1];
+  const glass = mid.shapes.filter((s) => C.GLASS_TILES.includes(s.wall));
+  const share = glass.length / mid.shapes.length;
+  if (share < 0.06 || share > 0.5) {
+    throw new Error(`glass fronts cover ${(share * 100).toFixed(1)}% of the mid layer`);
+  }
+  const used = new Set(glass.map((s) => s.wall));
+  if (used.size < C.GLASS_TILES.length) {
+    throw new Error(`only ${used.size} of ${C.GLASS_TILES.length} glass fronts are used`);
+  }
+  const short = glass.filter((s) => s.h < C.GLASS_MIN_H);
+  if (short.length > 0) {
+    throw new Error(`${short.length} glass fronts sit on towers under ${C.GLASS_MIN_H} px`);
+  }
+  // Glass is a mid-layer material: the near layer carries silhouette only.
+  for (const [name, layer] of [['far', layers[0]], ['near', layers[2]]]) {
+    const wrong = layer.shapes.filter((s) => C.GLASS_TILES.includes(s.wall));
+    if (wrong.length > 0) throw new Error(`${wrong.length} glass fronts in the ${name} layer`);
+  }
+  // Two glass towers in a row never wear the same front.
+  for (let i = 1; i < glass.length; i += 1) {
+    if (glass[i].wall === glass[i - 1].wall) {
+      throw new Error(`${glass[i].wall} sits on two glass towers in a row`);
+    }
+  }
+  // Random, not ruled: the towers with glass must not sit on a fixed step.
+  const places = glass.map((s) => mid.shapes.indexOf(s));
+  const steps = places.slice(1).map((v, i) => v - places[i]);
+  if (new Set(steps).size < 2) throw new Error(`glass fronts sit on a fixed step of ${steps[0]}`);
 }
 
 /** The moon is a disc: about 88 px wide, with sky in the corner of its box. */
@@ -642,6 +695,7 @@ async function main() {
     ['keys', () => caseKeys(page)],
     ['materials', () => caseMaterials(page)],
     ['city-windows', () => caseCityWindows(page)],
+    ['city-glass', () => caseCityGlass()],
     ['moon-disc', () => caseMoonDisc(page)],
     ['hero-frames', () => caseHeroFrames(page)],
     ['hero-head', () => caseHeroHead(page)],

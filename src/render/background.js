@@ -68,17 +68,37 @@ function building(random, index, x, width, height, layer) {
   return shape;
 }
 
-/** Build one layer: a row of buildings with sky between them. */
-function buildLayer(seed, factor, walls, props, span, minH, maxH, gapMin, gapMax) {
+/** Pick a glass front that differs from the one the previous glass tower wears. */
+function pickGlass(random, glass, previous) {
+  const name = glass[Math.floor(random() * glass.length)];
+  if (name !== previous || glass.length < 2) return name;
+  return glass[(glass.indexOf(name) + 1) % glass.length];
+}
+
+/** Build one layer: a row of buildings with sky between them.
+ * `glass` with `glassChance` lets a tall block wear a curtain wall instead of a
+ * bricked façade. `glassMinH` keeps short blocks out of it: a glass front needs
+ * height before the pane grid reads as a grid.
+ */
+function buildLayer(seed, factor, walls, props, span, minH, maxH, gapMin, gapMax,
+  { glass = [], glassChance = 0, glassMinH = 0 } = {}) {
   const random = seeded(seed);
   const shapes = [];
   let x = -260;
   let index = 0;
+  let lastGlass = '';
   while (x < span + 260) {
     const width = 30 + Math.round(random() * 92);
     // Heights land on an 8 px step, so a wall tile never stretches.
     const height = Math.round((minH + random() * (maxH - minH)) / 8) * 8;
-    shapes.push(building(random, index, x, width, height, { walls, props }));
+    const shape = building(random, index, x, width, height, { walls, props });
+    // A tall block may wear a glass front instead. The draw is per block, and two
+    // glass towers never show the same front in a row.
+    if (glass.length > 0 && height >= glassMinH && random() < glassChance) {
+      shape.wall = pickGlass(random, glass, lastGlass);
+      lastGlass = shape.wall;
+    }
+    shapes.push(shape);
     x += width + gapMin + Math.round(random() * gapMax);
     index += 1;
   }
@@ -92,9 +112,12 @@ export function buildCity(seed, levelWidth) {
   const props = ['propAntenna', 'propTank', 'propVent'];
   return [
     buildLayer(seed, C.PARALLAX.far, ['farWallA', 'farWallB'], props, span, 168, 352, 14, 40),
-    buildLayer(seed + 101, C.PARALLAX.mid, ['midWallA', 'midWallB'], props, span, 112, 288, 18, 52),
-    // The near layer is a row of dark rooftops: tall, far apart, so the sky shows
-    // between them and the mass never becomes one wall.
-    buildLayer(seed + 202, C.PARALLAX.near, ['nearWallA', 'nearWallB'], [], span, 48, 232, 52, 132),
+    // A third of the tall mid blocks wears a glass front, drawn per block, so the
+    // skyline never shows the same front twice in a row.
+    buildLayer(seed + 101, C.PARALLAX.mid, ['midWallA', 'midWallB'], props, span, 112, 288, 18, 52,
+      { glass: C.GLASS_TILES, glassChance: C.GLASS_CHANCE, glassMinH: C.GLASS_MIN_H }),
+    // The near layer is a row of dark rooftops: narrow, tall, far apart, so the sky
+    // shows between them and the mass never fuses into one wall.
+    buildLayer(seed + 202, C.PARALLAX.near, ['nearWallA', 'nearWallB'], [], span, 96, 264, 64, 168),
   ];
 }

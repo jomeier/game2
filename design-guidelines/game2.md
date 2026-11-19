@@ -331,8 +331,10 @@ no image file ships with the game and no build step exists. The rules:
 | Rule | Detail |
 |---|---|
 | One ramp per material | Four shades of one hue. A pixel picks a shade by index, never a mixed color. |
-| Named materials | `grass` and `dirt` for the ground, `stone` plus `stoneCap` for a platform, `farWall`, `midWall`, `nearWall` for the city, `moon`, `shadow`, `bomb`, two hearts, three roof props. |
+| Named materials | `grass`, `tufts`, `dirt` and `rock` for the ground, `stone` plus `stoneCap` for a platform, `farWall`, `midWall`, `nearWall` and `glassMid` for the city, `moon`, `shadow`, `bomb`, two hearts, three roof props. |
 | Tileable tiles | The grass, dirt, stone, and façade tiles repeat on whole pixel counts. Building heights land on an 8 px step, so a tile never stretches. |
+| Ground bands | The ground strip is three bands whose heights add up to its depth: `GRASS_BAND`, `SOIL_BAND`, `ROCK_BAND`. Grass blades are a separate tile drawn one tile above the standable line. |
+| Wide ground tiles | A ground tile is at least 96 px wide, the soil and rock tiles 192 px. |
 | One clip per cell | A paint job may only write inside its own atlas cell. A brush that reaches past the edge is dropped. |
 | Half-texel inset | The uv rect of a tile is inset by half a texel on all four sides, so a neighbour cannot bleed in. |
 | Sprite frame strips | The hero has two idle frames, six run frames, and one frame each for a jump, a fall, and a hurt. An enemy has four shuffle frames per direction. The renderer picks the frame from `world.time` and the walk distance. |
@@ -357,8 +359,12 @@ sprites. Sources: `https://ferdwolf.github.io/teemo.dev/games/celeste.html`,
 loader state before the first frame, and blur at non-integer scales, and the art
 of two packs rarely matches this palette. Linear filtering and mipmaps stand
 rejected: they smear the pixel look. One shared ramp for all materials stands
-rejected: grass and stone then read as the same surface. A DOM control hint stands
-rejected, see `DG-P-13`.
+rejected: grass and stone then read as the same surface. A narrow ground tile
+stands rejected: the first soil tile was 16 px wide, so its patches repeated
+sixty times across the level and the ground read as woven cloth instead of earth.
+A stepped gradient and rectangular tone patches stand rejected for the same
+reason: both drew one line across the full width and the soil read as two stacked
+planks. A DOM control hint stands rejected, see `DG-P-13`.
 
 ## DG-P-11: Opaque parallax silhouettes
 
@@ -367,7 +373,10 @@ The draw order runs sky and stars, moon, then the city layers back to front.
 Buildings cover the moon wherever they overlap it; the moon shows only in the
 gaps between silhouettes. Depth comes from the value steps, never from
 transparency. The front layer uses the darkest values, the back layers lighter
-and duller ones.
+and duller ones. A tall mid-layer tower wears a glass curtain wall instead of a
+bricked façade with `GLASS_CHANCE`, and only above `GLASS_MIN_H`; the tile is
+drawn so that two glass towers never wear the same front in a row. The glass ramp
+stays under the brightest shade of the layer behind it, so the value order holds.
 
 **Reason.** The spec demands opaque layers and forbids the moon shining through
 buildings. Alpha-blended buildings leak the moon and break the hard silhouettes
@@ -379,7 +388,10 @@ stacks opaque horizontal parallax bands. Sources:
 
 **Rejected.** Semi-transparent building layers: the moon glowing through houses
 reads as a bug. Blur-based depth of field: a blur pass costs shader time and the
-opaque rule blocks it.
+opaque rule blocks it. Glass in the near layer: that layer carries silhouette and
+no detail, and a pane grid in the darkest layer only fuses the rooftops into one
+mass. A fixed step for the glass towers, such as every third block: the eye finds
+the rule within two screens and the skyline reads as a stamped pattern.
 
 ## DG-P-12: Game over as one DOM headline
 
