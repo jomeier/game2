@@ -440,7 +440,8 @@ const RAMPS = {
   moon: makeRamp(P.moonRamp),
 };
 
-const GLASS = { warm: rgb(P.window), cool: rgb(P.windowCool), unlit: rgb(P.windowDark), sill: rgb('#080b18') };
+// Index order matters: paintFacade reads [lit warm, lit cool, unlit, frame].
+const GLASS = [rgb(P.window), rgb(P.windowCool), rgb(P.windowDark), rgb(P.propSteelLight)];
 const HERO = {
   body: rgb(P.heroBody), light: rgb(P.heroLight), mid: rgb(P.heroMid),
   dark: rgb(P.heroDark), outline: rgb(P.spriteOutline), visor: rgb(P.heroVisor),
@@ -450,48 +451,100 @@ const BLOB = {
   outline: rgb(P.enemyOutline), eye: rgb(P.sparkLight),
 };
 
+// The sprite boxes match the world boxes, so a sprite needs no scaling.
+const HERO_W = 26;
+const HERO_H = 40;
+const ENEMY_W = 26;
+const ENEMY_H = 24;
+const ATLAS_W = 512;
+const ATLAS_H = 256;
+const GUTTER = 1;
+
+/** Return a row-based cell allocator for the atlas.
+ * Every tile asks for its size and gets a free cell, so two tiles can never share
+ * pixels: the hand-placed cells of an earlier version put the jet tile right over
+ * the head rows of three run frames. */
+function createLayout(width, height) {
+  const taken = [];
+  let x = 0;
+  let y = 0;
+  let rowH = 0;
+
+  /** Take the next free cell of w by h pixels. */
+  function take(name, w, h) {
+    if (x + w > width) {
+      x = 0;
+      y += rowH + GUTTER;
+      rowH = 0;
+    }
+    if (y + h > height) throw new Error(`atlas is full: ${name} does not fit below y=${y}`);
+    const rect = { name, x, y, w, h };
+    taken.push(rect);
+    x += w + GUTTER;
+    rowH = Math.max(rowH, h);
+    return rect;
+  }
+
+  /** Return the name pair of two cells that share pixels, or null. */
+  function collision() {
+    for (let i = 0; i < taken.length; i += 1) {
+      for (let j = i + 1; j < taken.length; j += 1) {
+        const a = taken[i];
+        const b = taken[j];
+        const apart = a.x + a.w <= b.x || b.x + b.w <= a.x
+          || a.y + a.h <= b.y || b.y + b.h <= a.y;
+        if (!apart) return `${a.name} and ${b.name}`;
+      }
+    }
+    return null;
+  }
+
+  return { take, collision, count: () => taken.length };
+}
+
 /** Paint the whole atlas and return the canvas with its tile table. */
 function paintAtlas() {
-  const width = 384;
-  const height = 256;
-  const buf = createBuffer(width, height);
+  const buf = createBuffer(ATLAS_W, ATLAS_H);
+  const layout = createLayout(ATLAS_W, ATLAS_H);
   const rects = {};
 
-  /** Reserve one rect, paint it inside its own bounds, and remember it. */
-  function put(name, x, y, w, h, paint) {
-    rects[name] = { x, y, w, h };
-    buf.setClip({ x, y, w, h });
-    paint(buf, x, y, w, h);
+  /** Take a cell for one tile and paint it inside its own bounds. */
+  function put(name, w, h, paint) {
+    const rect = layout.take(name, w, h);
+    rects[name] = rect;
+    buf.setClip(rect);
+    paint(buf, rect.x, rect.y, rect.w, rect.h);
     buf.setClip(null);
+    return rect;
   }
 
   // Materials: grass and dirt for the ground, stone and its cap for platforms.
-  put('grass', 0, 0, 16, 8, (b, x, y, w, h) => paintGrass(b, x, y, w, h, RAMPS.grass.shades, 11));
-  put('dirt', 16, 0, 16, 16, (b, x, y, w, h) => paintDirt(b, x, y, w, h, RAMPS.dirt.shades, 23));
-  put('stone', 32, 0, 32, 16, (b, x, y, w, h) => paintStone(b, x, y, w, h, RAMPS.stone.shades, 37));
-  put('stoneCap', 64, 0, 32, 4, (b, x, y, w, h) => paintCap(b, x, y, w, h,
+  put('grass', 16, 8, (b, x, y, w, h) => paintGrass(b, x, y, w, h, RAMPS.grass.shades, 11));
+  put('dirt', 16, 16, (b, x, y, w, h) => paintDirt(b, x, y, w, h, RAMPS.dirt.shades, 23));
+  put('stone', 32, 16, (b, x, y, w, h) => paintStone(b, x, y, w, h, RAMPS.stone.shades, 37));
+  put('stoneCap', 32, 4, (b, x, y, w, h) => paintCap(b, x, y, w, h,
     rgb(P.stoneCapLight), rgb(P.stoneCapMid), rgb(P.stoneCapDark)));
-  put('grassCap', 96, 0, 16, 4, (b, x, y, w, h) => paintCap(b, x, y, w, h,
+  put('grassCap', 16, 4, (b, x, y, w, h) => paintCap(b, x, y, w, h,
     rgb(P.grassCapLight), rgb(P.grassCapMid), rgb(P.grassCapDark)));
 
-  // Façades: one tile per parallax layer, tileable in both directions.
-  put('farWall', 128, 0, 16, 32, (b, x, y, w, h) => paintFacade(b, x, y, w, h, RAMPS.far.shades,
-    { 0: GLASS.warm, 1: GLASS.cool, 2: GLASS.unlit, 3: GLASS.sill }, 41, 0.26));
-  put('midWall', 144, 0, 16, 32, (b, x, y, w, h) => paintFacade(b, x, y, w, h, RAMPS.mid.shades,
-    { 0: GLASS.warm, 1: GLASS.cool, 2: GLASS.unlit, 3: GLASS.sill }, 53, 0.16));
-  put('nearWall', 160, 0, 16, 32, (b, x, y, w, h) => paintFacade(b, x, y, w, h, RAMPS.near.shades,
-    { 0: GLASS.warm, 1: GLASS.cool, 2: GLASS.unlit, 3: GLASS.sill }, 67, 0.09));
+  // Facades: one tile per parallax layer, tileable in both directions.
+  put('farWall', 16, 32, (b, x, y, w, h) => paintFacade(b, x, y, w, h, RAMPS.far.shades,
+    GLASS, 41, 0.26));
+  put('midWall', 16, 32, (b, x, y, w, h) => paintFacade(b, x, y, w, h, RAMPS.mid.shades,
+    GLASS, 53, 0.16));
+  put('nearWall', 16, 32, (b, x, y, w, h) => paintFacade(b, x, y, w, h, RAMPS.near.shades,
+    GLASS, 67, 0.09));
 
   // Roof props for the skyline silhouette.
   const steel = rgb(P.propSteel);
-  put('propAntenna', 176, 0, 12, 14, (b, x, y, w, h) => paintProp(b, x, y, w, h, steel, 'antenna'));
-  put('propTank', 188, 0, 12, 12, (b, x, y, w, h) => paintProp(b, x, y, w, h, steel, 'tank'));
-  put('propVent', 200, 0, 12, 12, (b, x, y, w, h) => paintProp(b, x, y, w, h, steel, 'vent'));
+  put('propAntenna', 12, 14, (b, x, y, w, h) => paintProp(b, x, y, w, h, steel, 'antenna'));
+  put('propTank', 12, 12, (b, x, y, w, h) => paintProp(b, x, y, w, h, steel, 'tank'));
+  put('propVent', 12, 12, (b, x, y, w, h) => paintProp(b, x, y, w, h, steel, 'vent'));
 
   // The moon: a shaded sphere with maria and craters, alpha outside the disc.
-  put('moon', 240, 0, 64, 64, (b, x, y, w) => paintMoon(b, x, y, w, RAMPS.moon, 71));
-  put('shadow', 0, 32, 24, 8, (b, x, y, w, h) => paintShadow(b, x, y, w, h, rgb('#04060f')));
-  put('spark', 24, 32, 8, 8, (b, x, y, w) => {
+  put('moon', 64, 64, (b, x, y, w) => paintMoon(b, x, y, w, RAMPS.moon, 71));
+  put('shadow', 24, 8, (b, x, y, w, h) => paintShadow(b, x, y, w, h, rgb(P.spriteOutline)));
+  put('spark', 8, 8, (b, x, y, w) => {
     const c = rgb(P.sparkLight);
     for (let i = 0; i < w; i += 1) {
       b.set(x + i, y + 3, c);
@@ -499,49 +552,46 @@ function paintAtlas() {
     }
   });
 
-  // Heart HUD: full and spent, one 16x16 cell each.
+  // Heart HUD: full and spent.
   const heartShape = ['.XX.XX.', 'XXXXXXX', 'XXXXXXX', '.XXXXX.', '..XXX..', '...X...'];
-  const putHeart = (name, fill, shine) => put(name, name === 'heartFull' ? 32 : 48, 32, 16, 16,
-    (b, x, y) => {
-      const block = 2;
-      heartShape.forEach((row, ry) => {
-        for (let rx = 0; rx < row.length; rx += 1) {
-          if (row[rx] !== 'X') continue;
-          b.fill(x + 1 + rx * block, y + 1 + ry * block, block, block, fill);
-        }
-      });
-      b.fill(x + 3, y + 3, 2, 2, shine);
+  const paintHeart = (fillHex, shineHex) => (b, x, y) => {
+    const block = 2;
+    heartShape.forEach((row, ry) => {
+      for (let rx = 0; rx < row.length; rx += 1) {
+        if (row[rx] !== 'X') continue;
+        b.fill(x + 1 + rx * block, y + 1 + ry * block, block, block, rgb(fillHex));
+      }
     });
-  putHeart('heartFull', rgb(P.heartFull), rgb(P.blastLight));
-  putHeart('heartSpent', rgb(P.heartSpent), rgb(P.heartSpentLight));
+    b.fill(x + 3, y + 3, 2, 2, rgb(shineHex));
+  };
+  put('heartFull', 16, 16, paintHeart(P.heartFull, P.blastLight));
+  put('heartSpent', 16, 16, paintHeart(P.heartSpent, P.heartSpentLight));
 
-  // Hero frames: idle, run cycle, jump, fall. All face right; the atlas flips them.
-  const heroFrames = {};
-  const idle = [{ bob: 0, legA: 0, legB: 0, legLiftA: 0, legLiftB: 0, armX: 3 },
-    { bob: 1, legA: 0, legB: 0, legLiftA: 0, legLiftB: 0, armX: 3 }];
-  const poses = [...idle, ...heroRunPoses()];
-  heroFrames.idle = [0, 1].map((index) => putHero(buf, index * 26, 64, poses[index], `idle${index}`));
-  heroFrames.run = [2, 3, 4, 5, 6, 7].map((index, slot) => putHero(buf, 156 + slot * 26, 64,
-    poses[index], `run${slot}`));
-  heroFrames.jump = putHero(buf, 52, 64, { bob: 0, legA: -2, legB: 2, legLiftA: 3, legLiftB: 1, armX: 6 });
-  heroFrames.fall = putHero(buf, 78, 64, { bob: 1, legA: 2, legB: -2, legLiftA: 1, legLiftB: 3, armX: 5 });
-  heroFrames.hurt = putHero(buf, 104, 64, { bob: 3, legA: 3, legB: -3, legLiftA: 0, legLiftB: 0, armX: 7 });
+  // Hero frames: two idle, six run, and one each for jump, fall, and hurt.
+  const idlePoses = [
+    { bob: 0, legA: 0, legB: 0, legLiftA: 0, legLiftB: 0, armX: 3 },
+    { bob: 1, legA: 0, legB: 0, legLiftA: 0, legLiftB: 0, armX: 3 },
+  ];
+  const heroFrames = {
+    idle: idlePoses.map((pose, slot) => putHero(put, `idle${slot}`, pose)),
+    run: heroRunPoses().map((pose, slot) => putHero(put, `run${slot}`, pose)),
+    jump: putHero(put, 'jump', { bob: 0, legA: -2, legB: 2, legLiftA: 3, legLiftB: 1, armX: 6 }),
+    fall: putHero(put, 'fall', { bob: 1, legA: 2, legB: -2, legLiftA: 1, legLiftB: 3, armX: 5 }),
+    hurt: putHero(put, 'hurt', { bob: 3, legA: 3, legB: -3, legLiftA: 0, legLiftB: 0, armX: 7 }),
+  };
 
   // Enemy frames: four shuffle steps per direction.
-  const enemyFrames = { right: [], left: [] };
-  for (let frame = 0; frame < 4; frame += 1) {
-    enemyFrames.right.push(putBlob(buf, 0 + frame * 26, 104, frame, BLOB, 1, 'right'));
-    enemyFrames.left.push(putBlob(buf, 0 + frame * 26, 128, frame, BLOB, -1, 'left'));
-  }
+  const enemyFrames = {
+    right: [0, 1, 2, 3].map((frame) => putBlob(put, 'right', frame, 1)),
+    left: [0, 1, 2, 3].map((frame) => putBlob(put, 'left', frame, -1)),
+  };
 
-  // The jet that drops the bombs.
-  put('jet', 240, 64, 52, 14, (b, x, y, w, h) => paintJet(b, x, y, w, h, {
+  // The jet that drops the bombs, one bomb, and the control hint strip.
+  put('jet', 52, 14, (b, x, y, w, h) => paintJet(b, x, y, w, h, {
     hull: rgb(P.jet), dark: rgb(P.jetDark), glass: rgb(P.windowCool),
     hot: rgb(P.beacon), outline: rgb(P.spriteOutline),
   }));
-
-  // Bomb and the control hint strip.
-  put('bomb', 104, 104, 12, 14, (b, x, y) => {
+  put('bomb', 12, 14, (b, x, y) => {
     b.fill(x + 2, y + 4, 8, 9, rgb(P.bombOutline));
     b.fill(x + 3, y + 5, 6, 7, rgb(P.bombBody));
     b.fill(x + 3, y + 5, 6, 2, rgb(P.bombLight));
@@ -549,30 +599,29 @@ function paintAtlas() {
     b.fill(x + 5, y + 1, 2, 3, rgb(P.bombFuse));
     b.set(x + 6, y, rgb(P.sparkLight));
   });
-  put('hintMove', 156, 104, 150, 12, (b, x, y) => {
+  put('hintMove', 150, 12, (b, x, y) => {
     paintHint(b, x, y + 1, rgb(P.hintGlyph), 'A/D WALK');
     paintHint(b, x, y + 8, rgb(P.hintGlyph), 'SPACE JUMP');
   });
 
+  const clash = layout.collision();
+  if (clash) throw new Error(`atlas cells overlap: ${clash}`);
   buf.commit();
   return { canvas: buf.canvas, rects, heroFrames, enemyFrames };
 }
 
-/** Put one hero pose into the atlas at x, y and return its tile. */
-function putHero(buf, x, y, pose, slot) {
-  const name = `hero${slot === undefined ? 'X' : slot}_${x}_${y}`;
-  buf.setClip({ x, y, w: 26, h: 40 });
-  paintHero(buf, x, y, pose, HERO);
-  buf.setClip(null);
-  return { x, y, w: 26, h: 40, name };
+/** Take a cell and paint one hero pose into it. */
+function putHero(put, slot, pose) {
+  const name = `hero_${slot}`;
+  put(name, HERO_W, HERO_H, (b, x, y) => paintHero(b, x, y, pose, HERO));
+  return name;
 }
 
-/** Put one enemy frame into the atlas at x, y and return its tile. */
-function putBlob(buf, x, y, frame, colors, dir, side) {
-  buf.setClip({ x, y, w: 26, h: 24 });
-  paintBlob(buf, x, y, frame, colors, dir);
-  buf.setClip(null);
-  return { x, y, w: 26, h: 24, name: `enemy_${side}_${frame}` };
+/** Take a cell and paint one enemy shuffle frame into it. */
+function putBlob(put, side, frame, dir) {
+  const name = `enemy_${side}_${frame}`;
+  put(name, ENEMY_W, ENEMY_H, (b, x, y) => paintBlob(b, x, y, frame, BLOB, dir));
+  return name;
 }
 
 /** Upload the painted canvas and return the tile table for the renderer. */
@@ -601,25 +650,13 @@ export function createAtlas(gl) {
 
   const tiles = {};
   for (const [name, rect] of Object.entries(rects)) tiles[name] = tile(rect);
-  for (const frame of heroFrames.run.concat(heroFrames.idle, [heroFrames.jump, heroFrames.fall,
-    heroFrames.hurt])) tiles[frame.name] = tile(frame);
-  for (const frame of enemyFrames.right.concat(enemyFrames.left)) tiles[frame.name] = tile(frame);
 
   return {
     texture,
     width: canvas.width,
     height: canvas.height,
     tiles,
-    hero: {
-      idle: heroFrames.idle.map((frame) => frame.name),
-      run: heroFrames.run.map((frame) => frame.name),
-      jump: heroFrames.jump.name,
-      fall: heroFrames.fall.name,
-      hurt: heroFrames.hurt.name,
-    },
-    enemy: {
-      right: enemyFrames.right.map((frame) => frame.name),
-      left: enemyFrames.left.map((frame) => frame.name),
-    },
+    hero: heroFrames,
+    enemy: enemyFrames,
   };
 }

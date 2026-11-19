@@ -392,6 +392,61 @@ async function caseHeroFrames(page) {
   if (diff < 12) throw new Error(`the hero sprite changed in only ${diff} sampled points`);
 }
 
+/** Find the left edge of the hero by looking for the cyan cluster at the feet band. */
+function findHeroLeft(image, cfg) {
+  const body = hexToRgb(cfg.COLOR.heroBody);
+  const light = hexToRgb(cfg.COLOR.heroLight);
+  const near = (px, c) => Math.abs(px[0] - c[0]) + Math.abs(px[1] - c[1]) + Math.abs(px[2] - c[2]);
+  let best = { x: -1, n: 0 };
+  for (let x = 0; x < 960 - 26; x += 1) {
+    let n = 0;
+    for (let y = 438; y < 480; y += 1) {
+      for (let dx = 0; dx < 26; dx += 2) {
+        const px = pixel(image, x + dx, y);
+        if (near(px, body) < 70 || near(px, light) < 90) n += 1;
+      }
+    }
+    if (n > best.n) best = { x, n };
+  }
+  return best;
+}
+
+/** The helmet must look the same in every run frame: no cell bleed at the head. */
+async function caseHeroHead(page) {
+  await page.evaluate(() => window.__game.api.newRun());
+  await sleep(250);
+  const cfg = await probe(page, () => ({ COLOR: window.__gameConfig.COLOR }));
+  await page.keyboard.down('KeyD');
+  await sleep(280);
+  const caps = [];
+  const deadline = Date.now() + 2500;
+  const seen = new Set();
+  while (Date.now() < deadline && seen.size < 6) {
+    const image = await probeShot(page, 'probe-head.png');
+    const frame = await page.evaluate(() => Math.floor(window.__game.state.time * 12) % 6);
+    if (seen.has(frame)) { await sleep(30); continue; }
+    seen.add(frame);
+    const hero = findHeroLeft(image, cfg);
+    // The light cap of the helmet: two rows of ten bright pixels in the head band.
+    let cap = 0;
+    for (let y = 440; y < 444; y += 1) {
+      for (let x = 0; x < 26; x += 1) {
+        const px = pixel(image, hero.x + x, y);
+        if (Math.abs(px[0] - 217) + Math.abs(px[1] - 251) + Math.abs(px[2] - 255) < 90) cap += 1;
+      }
+    }
+    caps.push({ frame, cap });
+    await sleep(30);
+  }
+  await page.keyboard.up('KeyD');
+  if (seen.size < 5) throw new Error(`only ${seen.size} run frames were sampled`);
+  const counts = caps.map((c) => c.cap);
+  const low = Math.min(...counts);
+  const high = Math.max(...counts);
+  if (low < 15) throw new Error(`a run frame shows only ${low} helmet pixels: ${JSON.stringify(caps)}`);
+  if (high - low > 6) throw new Error(`the helmet differs between frames: ${JSON.stringify(caps)}`);
+}
+
 /** The control hint shows during the first seconds of a level (spec Player 4). */
 async function caseHint(page) {
   await page.evaluate(() => window.__game.api.newRun());
@@ -567,6 +622,7 @@ async function main() {
     ['city-windows', () => caseCityWindows(page)],
     ['moon-disc', () => caseMoonDisc(page)],
     ['hero-frames', () => caseHeroFrames(page)],
+    ['hero-head', () => caseHeroHead(page)],
     ['hint', () => caseHint(page)],
     ['move', () => caseMove(page)],
     ['jump', () => caseJump(page)],

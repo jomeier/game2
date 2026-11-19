@@ -8,7 +8,7 @@ atlas, the sky, and the city. It reads world state and never changes it. See rul
 |---|---|
 | `renderer.js` | The context, the draw queue, the camera shift, the layer order, the sprite frame choice. |
 | `shaders.js` | The three programs: `quad`, `glow`, `atlas`. |
-| `textures.js` | The atlas: material tiles, roof props, the moon, sprite frame strips, a 3x5 pixel font. |
+| `textures.js` | The atlas: a cell allocator, material tiles, roof props, the moon, sprite frame strips, a 3x5 pixel font. |
 | `background.js` | Stars, the horizon haze, the moon arc, the three city layers and their roof props. |
 
 ## Commands
@@ -52,6 +52,12 @@ once with `NEAREST` filtering. `createAtlas(gl)` returns `{ texture, tiles, hero
 enemy }`. Each entry in `tiles` is `{ uv, w, h }`, and the uv is inset by half a
 texel so a neighbour cannot bleed in.
 
+No file names an atlas position. `createLayout` hands out the next free cell to
+every tile, and `paintAtlas` throws with both names when two cells still share a
+pixel. Hand-placed cells caused the first real art bug of this project: the jet
+cell sat on top of the head rows of three run frames, so the hero showed stray
+pixels at the helmet every other stride.
+
 | Tile | Used for |
 |---|---|
 | `grass`, `dirt` | the ground strip and its body |
@@ -73,8 +79,8 @@ distance for an enemy, so no module keeps animation state.
 - One ramp of four shades per material. The ramps are built from `COLOR` in
   [../config.js](../config.js).
 - Each paint job carries a clip box and may only write inside its own atlas cell.
-  An unclipped brush bled stone colors into the dirt tile and made the ground look
-  blue.
+  Before the allocator existed, the stone mortar bled into the dirt cell and made
+  the ground read blue.
 - Building heights land on an 8 px step, so a façade tile never stretches.
 - A mirrored sprite swaps the uv x pair; see `mirrored()` in `renderer.js`.
 
