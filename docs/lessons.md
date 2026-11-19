@@ -11,10 +11,10 @@ blame the picture.
 
 `LL-01` **A generated sheet does not survive an arbitrary shrink.** I baked the ten
 city fronts from 640 x 1280 sheets into 16 x 32 tiles: a factor of 40 in each axis. Every window fell to one pixel and the skyline lost all detail - the textures
-were "not recognizable", in the words of the review. Follow-up: front textures ship
-as PNG files at their tile box (32 x 64, factor 20) and load at boot, so the sheet
-still looks like the sheet. `DG-P-10` carries the decision, `docs/references/README.md`
-the provenance.
+and the skyline stopped being recognizable. The fronts now ship as thirty PNG files
+at their tile box (32 x 64, factor 20, one per design and layer) and load before the
+first frame, so a tower still looks like its sheet. `DG-P-10` carries that decision
+and its cost, `src/render/texturen/README.md` the files.
 
 `LL-02` **Four equal tone shares read as noise.** The first bake split a sheet into
 four equal quarters and every material turned into TV static, because one tone dominates a real surface. The bake now splits at 20 / 40 / 25 / 15 percent.
@@ -45,11 +45,13 @@ planning how it will meet a four-shade ramp.
 
 ## Tools and measurement
 
-`LL-08` **A tool bug looks exactly like an art problem.** Three of my own bugs first
+`LL-08` **A tool bug looks exactly like an art problem.** Five of my own bugs first
 read as bad textures: the baker read its arguments from the wrong index and took the
 preview path as a colour, its field packed four pixels per byte while the reader in
-the game expected two, and a missing command-line argument cropped the preview PNG
-into a stray file. Encode and decode one field and compare the shares before judging any
+the game expected two, a missing command-line argument wrote a preview into a stray
+file named `430`, and `PX.copy(...)` - a call that copies FROM the buffer it sits
+on - painted all ten textures black. Encode and decode one field, and look at the file,
+before judging any picture. Encode and decode one field and compare the shares before judging any
 picture.
 
 `LL-09` **A pixel counter must know every variant.** `city-windows` broke when the

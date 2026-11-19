@@ -82,14 +82,20 @@ export const GLASS_TILES = ['glassMidA', 'glassMidB', 'glassMidC'];
 export const GLASS_CHANCE = 0.42;
 export const GLASS_MIN_H = 176;
 
-// The wall tiles of the three layers. Each layer holds four: the base tint on two
-// window grids, plus the warm and the cool relative with a window grid of their
-// own. A layer shows all three tints, so it stays one distance and one haze.
-export const CITY_WALLS = {
-  far: ['farWallA', 'farWallB', 'farWallC', 'farWallD'],
-  mid: ['midWallA', 'midWallB', 'midWallC', 'midWallD'],
-  near: ['nearWallA', 'nearWallB', 'nearWallC', 'nearWallD'],
-};
+// Ten comic skyscraper fronts, and the tint each design wears: 0 base, 1 warm,
+// 2 cool. Ten designs read as ten buildings; the three tints share the value steps
+// of their layer, so a layer stays one distance and one haze (DG-P-11).
+export const FRONT_DESIGNS = [
+  ['grid', 0], ['ribbed', 1], ['arched', 0], ['banded', 2], ['bay', 1],
+  ['escape', 0], ['corniced', 2], ['pierred', 1], ['chequer', 2], ['slit', 0],
+];
+
+// The wall tile of a design inside a layer: far + Grid, mid + Grid, near + Grid.
+export const CITY_FRONTS = {};
+for (const [layer, prefix] of Object.entries({ far: 'far', mid: 'mid', near: 'near' })) {
+  CITY_FRONTS[layer] = FRONT_DESIGNS.map(([design]) => prefix
+    + design[0].toUpperCase() + design.slice(1));
+}
 
 // The tile boxes of the atlas, one source for render/textures.js and for the
 // tile-fit test. A box must divide the surface it fills: the ground bands, the cap
@@ -105,9 +111,28 @@ export const TILE = {
 };
 // City walls and curtain walls all share one box, so any building width that is a
 // whole number of 16 and any height that is a whole number of 32 fits exactly.
-for (const wall of [...CITY_WALLS.far, ...CITY_WALLS.mid, ...CITY_WALLS.near, ...GLASS_TILES]) {
-  TILE[wall] = [16, 32];
+// The value scale baked into the façade textures per city layer (DG-P-11: far the
+// lightest, near almost black). tools/comfy/fronttexturen.mjs scales by these
+// numbers when it writes the files, and the city-windows test divides them out
+// again, so "how many windows burn" is measurable in absolute terms.
+export const FRONT_LAYER_TON = { far: 1.06, mid: 0.82, near: 0.46 };
+
+// The grid a building lands on: its width is a whole number of CITY_GRID.w and its
+// height a whole number of CITY_GRID.h, so a front texture is never stretched.
+export const CITY_GRID = { w: 32, h: 64 };
+
+for (const front of [
+  ...CITY_FRONTS.far, ...CITY_FRONTS.mid, ...CITY_FRONTS.near, ...GLASS_TILES,
+]) {
+  TILE[front] = [CITY_GRID.w, CITY_GRID.h];
 }
+
+// Stepped crowns (DG-P-11): the silhouette that reads as a comic skyscraper. A
+// tower of at least SETBACK_MIN_H gets up to SETBACK_TIERS blocks stacked on its
+// roof, each 16 px wide by 32 px tall - the wall grid, so a tier never stretches.
+export const SETBACK_CHANCE = 0.45;
+export const SETBACK_MIN_H = 160;
+export const SETBACK_TIERS = 2;
 
 // The DG-P-09 night palette.
 export const COLOR = {

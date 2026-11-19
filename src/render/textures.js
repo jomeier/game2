@@ -88,64 +88,6 @@ function createBuffer(width, height) {
 // ---------------------------------------------------------------- materials --
 
 /** Paint a tileable grass top: bright tips, mid body, dark base, few dew points. */
-/** Paint one tile from a baked tone field: one ramp shade per index.
- * The field carries the form, the ramp carries the colour, so a material keeps its
- * four shades no matter which sheet the form came from. A field that does not fit
- * its tile throws: a scaled tile would break the pixel grid.
- */
-function paintField(buf, x0, y0, w, h, ramp, name) {
-  const feld = muster(name);
-  if (feld.w !== w || feld.h !== h) {
-    throw new Error(`pattern ${name} is ${feld.w}x${feld.h}, the tile is ${w}x${h}`);
-  }
-  for (let y = 0; y < h; y += 1) {
-    for (let x = 0; x < w; x += 1) {
-      buf.set(x0 + x, y0 + y, ramp[feld.pixel[y * w + x]]);
-    }
-  }
-}
-
-function paintGrass(buf, x0, y0, w, h, ramp, seed) {
-  const random = seeded(seed);
-  const noise = Array.from({ length: w }, () => random());
-  for (let x = 0; x < w; x += 1) {
-    // Tips vary over three rows, so the top edge is ragged instead of ruled.
-    const tip = noise[x] > 0.78 ? 0 : noise[x] > 0.42 ? 1 : 2;
-    for (let y = 0; y < h; y += 1) {
-      let color = ramp[2];
-      if (y < tip) color = ramp[0];
-      else if (y < tip + 2) color = ramp[1];
-      else if (y > h - 2) color = ramp[3];
-      buf.set(x0 + x, y0 + y, color);
-    }
-    if (noise[(x + 3) % w] > 0.88) buf.set(x0 + x, y0 + tip + 1, ramp[0]);
-  }
-  // A shade band under the tips separates grass from the soil below it.
-  buf.fill(x0, y0 + h - 2, w, 2, ramp[3]);
-  for (let i = 0; i < 8; i += 1) {
-    buf.set(x0 + Math.floor(random() * w), y0 + 2 + Math.floor(random() * (h - 5)), ramp[0]);
-  }
-}
-
-/** Paint grass blades in clumps, rising above the line the feet stand on.
- * One blade every few pixels would stand as a comb and hide the ground line, so
- * the clumps are separated by bare ground.
- */
-function paintTufts(buf, x0, y0, w, h, ramp, seed) {
-  const random = seeded(seed);
-  for (let i = 0; i < 7; i += 1) {
-    const start = Math.floor(random() * w);
-    const spread = 3 + Math.floor(random() * 5);
-    for (let c = 0; c < spread; c += 1) {
-      if (random() > 0.75) continue;                    // a lean blade, not a wall
-      const x = (start + c) % w;
-      const height = 2 + Math.floor(random() * (h - 1));
-      buf.fill(x0 + x, y0 + h - height, 1, height, random() > 0.5 ? ramp[0] : ramp[1]);
-      buf.set(x0 + x, y0 + h - height, ramp[0]);        // a lit tip
-    }
-  }
-}
-
 /** Paint tileable stone courses: mortar gaps, per-block value, bevel, chips. */
 function paintStone(buf, x0, y0, w, h, ramp, seed) {
   const random = seeded(seed);
@@ -172,121 +114,28 @@ function paintStone(buf, x0, y0, w, h, ramp, seed) {
   }
 }
 
-/** Paint the light cap of a standable surface: a bright line over a dark seam. */
-function paintCap(buf, x0, y0, w, h, light, mid, dark) {
-  buf.fill(x0, y0, w, h, mid);
-  buf.fill(x0, y0, w, 1, light);
-  buf.fill(x0, y0 + h - 1, w, 1, dark);
-  for (let x = 0; x < w; x += 3) buf.set(x0 + x, y0, light);
-}
 
-/** Paint one tileable building façade: a wall gradient plus a window grid.
- * `bay` sets the window pitch and `shift` moves the whole grid, so the A and the B
- * variant of a layer do not line up. No full width floor lines: those turned the
- * three layers into one wallpaper. */
-function paintFacade(buf, x0, y0, w, h, wall, glass, o) {
-  const random = seeded(o.seed);
-  // `pane` is the window width and `bay` the distance between two windows: one
-  // tile can hold few small windows or many, without a window growing out of the
-  // pixel scale of the layer.
-  const windowW = o.pane;
-  const windowH = o.step / 2;
-  for (let y = 0; y < h; y += 1) {
-    // One vertical value step per third: a tower reads taller with it.
-    const third = y < h / 3 ? 1 : y < (2 * h) / 3 ? 2 : 3;
-    for (let x = 0; x < w; x += 1) {
-      buf.set(x0 + x, y0 + y, random() > 0.93 ? wall[third - 1] : wall[third]);
-    }
-  }
-  // The first row sits where the tile's floor step says it does, so a step that
-  // divides the tile height keeps the rhythm even across the tile seam.
-  for (let fy = o.fy0; fy + windowH + 1 < h; fy += o.step) {
-    for (let bx = o.shift; bx + windowW <= w; bx += o.bay) {
-      const lit = random() < o.lit;
-      const wx = x0 + bx;
-      const wy = y0 + fy;
-      // `cool` is the share of the lit windows that burn cool white. Tying the
-      // light mix to the wall tint is what makes one tower read as one building.
-      buf.fill(wx, wy, windowW, windowH, lit
-        ? (random() < o.cool ? glass[1] : glass[0]) : glass[2]);
-      if (lit) {
-        buf.fill(wx, wy, windowW, 1, glass[1]);
-        buf.set(wx + 1, wy + 2, glass[1]);
-      } else {
-        buf.fill(wx, wy, windowW, 1, glass[3]);
-      }
-      buf.fill(wx - 1, wy + windowH, windowW + 2, 1, wall[0]);   // sill catches the light
-    }
-  }
-}
-
-/** Paint a glass curtain wall: a mullion grid whose panes reflect the sky.
- * A pane picks its shade from a reflection value: bright where the sky is, dark
- * toward the street, plus a sheen band that crosses the front on a diagonal.
- * Without that band every tower shows the same flat gradient, which is what makes
- * a curtain wall boring. Some panes hold a closed blind, a few hold a light, so
- * the wall reads as a building and not as a mirror.
+/** Paint one tile from a baked tone field: one ramp shade per index.
+ * The field carries the form, the ramp carries the colour, so a material keeps its
+ * four shades no matter which sheet the form came from. A field that does not fit
+ * its tile throws: a scaled tile would break the pixel grid.
  */
-function paintGlassFront(buf, x0, y0, w, h, ramp, glass, seed, litChance, bay, phase) {
-  const random = seeded(seed);
-  buf.fill(x0, y0, w, h, ramp[3]);                    // the mullion field
-  const pane = bay - 1;                               // one pixel of mullion between
-  for (let fy = 0; fy + bay <= h; fy += bay) {
-    for (let fx = 0; fx + bay <= w; fx += bay) {
-      const u = (fx + 0.5) / w;
-      const v = (fy + 0.5) / h;
-      const sky = 1 - v * 0.8;                        // sky above, street below
-      const sheen = Math.max(0, 1 - Math.abs(u * 0.9 + v * 0.9 - phase) / 0.34);
-      // A curtain wall mirrors the bright band at the horizon, so one row of panes
-      // across the front carries it. Without that band the glass stays flat and
-      // reads as a dull wall next to the lit brick towers.
-      const horizon = Math.max(0, 1 - Math.abs(v - (0.34 + phase * 0.22)) / 0.09);
-      // The reflection has to walk over all four shades from the roof to the
-      // street, and it has to stay louder than the per-pane noise: a wide noise
-      // term turns a curtain wall into confetti and the reflection is gone.
-      const value = random() > 0.93 ? 0.08
-        : sky * 0.72 + sheen * 0.5 + horizon * 0.5 + random() * 0.08;
-      const shade = Math.max(0, Math.min(3, 3 - Math.floor(value * 3.99)));
-      const px = x0 + fx;
-      const py = y0 + fy;
-      if (random() < litChance) {
-        // Mostly a cool lamp behind the glass: warm panes in a grid read as a
-        // polka-dot pattern, because the eye links them into rows.
-        buf.fill(px, py, pane, pane, random() > 0.35 ? glass[1] : glass[0]);
-        buf.fill(px, py, pane, 1, glass[1]);          // the frame above a lit pane
-      } else {
-        buf.fill(px, py, pane, pane, ramp[shade]);
-        // One lighter pixel along the top is what sells the grid as glass.
-        buf.fill(px, py, pane, 1, ramp[Math.max(0, shade - 1)]);
-        if (shade === 0) buf.set(px, py, glass[3]);   // a glint on the brightest pane
-      }
+/** Load the ten facade textures. The atlas is only complete once they are in, so
+ * the game waits for them before its first frame. A missing file rejects: a tower
+ * with a blank front is worse than a visible error.
+ */
+async function ladeTexturen() {
+  const texturen = new Map();
+  const aufgaben = [];
+  for (const schicht of ['far', 'mid', 'near']) {
+    for (const [design] of C.FRONT_DESIGNS) {
+      const bild = new Image();
+      bild.src = `render/texturen/${design}-${schicht}.png`;
+      aufgaben.push(bild.decode().then(() => texturen.set(`${schicht}/${design}`, bild)));
     }
   }
-}
-
-/** Paint a roof prop: a mast with a light, a tank on legs, or a capped vent.
- * Each one stands on the roof line and holds to it with legs or a base, so it
- * never reads as a box floating above the building. */
-function paintProp(buf, x0, y0, w, h, color, shine, kind) {
-  if (kind === 'antenna') {
-    const mid = Math.floor(w / 2);
-    buf.fill(x0 + mid, y0 + 1, 1, h - 1, color);
-    buf.fill(x0 + mid - 2, y0 + 3, 5, 1, color);
-    buf.fill(x0 + mid - 1, y0 + 6, 3, 1, color);
-    buf.set(x0 + mid, y0, shine);
-  } else if (kind === 'tank') {
-    const left = 3;
-    const bodyW = w - 2 * left;
-    buf.fill(x0 + left, y0 + 2, bodyW, 6, color);
-    buf.fill(x0 + left, y0 + 2, bodyW, 1, shine);           // rim light on the band
-    buf.fill(x0 + left + 1, y0 + 1, bodyW - 2, 1, color);   // the lid
-    buf.fill(x0 + left, y0 + 8, 1, h - 8, color);           // legs down to the roof
-    buf.fill(x0 + w - left - 1, y0 + 8, 1, h - 8, color);
-  } else {
-    buf.fill(x0 + 3, y0 + 4, 5, h - 4, color);
-    buf.fill(x0 + 2, y0 + 3, 7, 1, shine);                  // cap catches the light
-    buf.fill(x0 + 4, y0 + 6, 3, 1, shine);
-  }
+  await Promise.all(aufgaben);
+  return texturen;
 }
 
 /** Paint a real moon as a lit sphere with seas and a few large craters.
@@ -362,6 +211,7 @@ function paintMoon(buf, x0, y0, size, ramp, seed) {
   }
 }
 
+
 /** Return a blend of two [r,g,b] tones, share of b in 0..1. */
 function mixTone(a, b, share) {
   return [
@@ -369,6 +219,86 @@ function mixTone(a, b, share) {
     Math.round(a[1] * (1 - share) + b[1] * share),
     Math.round(a[2] * (1 - share) + b[2] * share),
   ];
+}
+function paintField(buf, x0, y0, w, h, ramp, name) {
+  const feld = muster(name);
+  if (feld.w !== w || feld.h !== h) {
+    throw new Error(`pattern ${name} is ${feld.w}x${feld.h}, the tile is ${w}x${h}`);
+  }
+  for (let y = 0; y < h; y += 1) {
+    for (let x = 0; x < w; x += 1) {
+      buf.set(x0 + x, y0 + y, ramp[feld.pixel[y * w + x]]);
+    }
+  }
+}
+
+/** Paint a glass curtain wall: a mullion grid whose panes reflect the sky.
+ * A pane picks its shade from a reflection value: bright where the sky is, dark
+ * toward the street, plus a sheen band that crosses the front on a diagonal.
+ * Without that band every tower shows the same flat gradient, which is what makes
+ * a curtain wall boring. Some panes hold a closed blind, a few hold a light, so
+ * the wall reads as a building and not as a mirror.
+ */
+function paintGlassFront(buf, x0, y0, w, h, ramp, glass, seed, litChance, bay, phase) {
+  const random = seeded(seed);
+  buf.fill(x0, y0, w, h, ramp[3]);                    // the mullion field
+  const pane = bay - 1;                               // one pixel of mullion between
+  for (let fy = 0; fy + bay <= h; fy += bay) {
+    for (let fx = 0; fx + bay <= w; fx += bay) {
+      const u = (fx + 0.5) / w;
+      const v = (fy + 0.5) / h;
+      const sky = 1 - v * 0.8;                        // sky above, street below
+      const sheen = Math.max(0, 1 - Math.abs(u * 0.9 + v * 0.9 - phase) / 0.34);
+      // A curtain wall mirrors the bright band at the horizon, so one row of panes
+      // across the front carries it. Without that band the glass stays flat and
+      // reads as a dull wall next to the lit brick towers.
+      const horizon = Math.max(0, 1 - Math.abs(v - (0.34 + phase * 0.22)) / 0.09);
+      // The reflection has to walk over all four shades from the roof to the
+      // street, and it has to stay louder than the per-pane noise: a wide noise
+      // term turns a curtain wall into confetti and the reflection is gone.
+      const value = random() > 0.93 ? 0.08
+        : sky * 0.72 + sheen * 0.5 + horizon * 0.5 + random() * 0.08;
+      const shade = Math.max(0, Math.min(3, 3 - Math.floor(value * 3.99)));
+      const px = x0 + fx;
+      const py = y0 + fy;
+      if (random() < litChance) {
+        // Mostly a cool lamp behind the glass: warm panes in a grid read as a
+        // polka-dot pattern, because the eye links them into rows.
+        buf.fill(px, py, pane, pane, random() > 0.35 ? glass[1] : glass[0]);
+        buf.fill(px, py, pane, 1, glass[1]);          // the frame above a lit pane
+      } else {
+        buf.fill(px, py, pane, pane, ramp[shade]);
+        // One lighter pixel along the top is what sells the grid as glass.
+        buf.fill(px, py, pane, 1, ramp[Math.max(0, shade - 1)]);
+        if (shade === 0) buf.set(px, py, glass[3]);   // a glint on the brightest pane
+      }
+    }
+  }
+}
+
+/** Paint a roof prop: a mast with a light, a tank on legs, or a capped vent.
+ * Each one stands on the roof line and holds to it with legs or a base, so it
+ * never reads as a box floating above the building. */
+function paintProp(buf, x0, y0, w, h, color, shine, kind) {
+  if (kind === 'antenna') {
+    const mid = Math.floor(w / 2);
+    buf.fill(x0 + mid, y0 + 1, 1, h - 1, color);
+    buf.fill(x0 + mid - 2, y0 + 3, 5, 1, color);
+    buf.fill(x0 + mid - 1, y0 + 6, 3, 1, color);
+    buf.set(x0 + mid, y0, shine);
+  } else if (kind === 'tank') {
+    const left = 3;
+    const bodyW = w - 2 * left;
+    buf.fill(x0 + left, y0 + 2, bodyW, 6, color);
+    buf.fill(x0 + left, y0 + 2, bodyW, 1, shine);           // rim light on the band
+    buf.fill(x0 + left + 1, y0 + 1, bodyW - 2, 1, color);   // the lid
+    buf.fill(x0 + left, y0 + 8, 1, h - 8, color);           // legs down to the roof
+    buf.fill(x0 + w - left - 1, y0 + 8, 1, h - 8, color);
+  } else {
+    buf.fill(x0 + 3, y0 + 4, 5, h - 4, color);
+    buf.fill(x0 + 2, y0 + 3, 7, 1, shine);                  // cap catches the light
+    buf.fill(x0 + 4, y0 + 6, 3, 1, shine);
+  }
 }
 
 /** Paint a soft elliptical ground shadow for an entity. */
@@ -555,6 +485,8 @@ const RAMPS = {
   stone: makeRamp([P.stoneLight, P.stone, P.stoneDark, P.stoneDeep]),
   footing: makeRamp(P.rockFooting),
   glassMid: makeRamp(P.glassMid),
+  capStone: makeRamp([P.stoneCapLight, P.stoneCapMid, P.stoneCapDark, P.stoneDeep]),
+  capGrass: makeRamp([P.grassCapLight, P.grassCapMid, P.grassCapDark, P.grassDeep]),
   far: makeRamp(P.wallFar),
   farWarm: makeRamp(P.wallFarWarm),
   farCool: makeRamp(P.wallFarCool),
@@ -567,8 +499,8 @@ const RAMPS = {
   moon: makeRamp(P.moonRamp),
 };
 
-// Index order matters: paintFacade reads [lit warm, lit cool, unlit, frame].
-// Index order matters: paintFacade reads [lit warm, lit cool, unlit, frame].
+// Index order matters: the front and glass painters read
+// [lit warm, lit cool, unlit, frame].
 const GLASS = [rgb(P.window), rgb(P.windowCool), rgb(P.windowDark), rgb(P.propSteelLight)];
 const GLASS_NEAR = [rgb(P.windowNearWarm), rgb(P.windowNearCool), rgb(P.windowDark),
   rgb(P.propSteelLight)];
@@ -586,8 +518,10 @@ const HERO_W = 26;
 const HERO_H = 40;
 const ENEMY_W = 26;
 const ENEMY_H = 24;
-const ATLAS_W = 512;
-const ATLAS_H = 256;
+// Ten façade textures at 32 x 64, in three layers, need more room than the
+// painted tiles ever did. Two megabytes of texture memory, one upload.
+const ATLAS_W = 1024;
+const ATLAS_H = 512;
 const GUTTER = 1;
 
 /** Return a row-based cell allocator for the atlas.
@@ -633,7 +567,8 @@ function createLayout(width, height) {
 }
 
 /** Paint the whole atlas and return the canvas with its tile table. */
-function paintAtlas() {
+async function paintAtlas() {
+  const texturen = await ladeTexturen();
   const buf = createBuffer(ATLAS_W, ATLAS_H);
   const layout = createLayout(ATLAS_W, ATLAS_H);
   const rects = {};
@@ -665,69 +600,62 @@ function paintAtlas() {
   // structure at these sizes - see the note in ../design-guidelines/game2.md on
   // DG-P-10: at 32 x 16 the masonry sheet became fine noise, and the grass band
   // became speckle. Blades and courses are drawn, soil and footing are baked.
-  put('grass', 80, 12, (b, x, y, w, h) => paintGrass(b, x, y, w, h, RAMPS.grass.shades, 11));
-  put('tufts', 80, 6, (b, x, y, w, h) => paintTufts(b, x, y, w, h, RAMPS.grass.shades, 17));
+  put('grass', 80, 12, (b, x, y, w, h) => paintField(b, x, y, w, h, RAMPS.grass.shades, 'grass'));
+  put('tufts', 80, 6, (b, x, y, w, h) => paintField(b, x, y, w, h, RAMPS.grass.shades, 'tufts'));
   put('dirt', 160, 21, (b, x, y, w, h) => {
     paintField(b, x, y, w, h, RAMPS.dirt.shades, 'dirt');
     b.fill(x, y, w, 1, RAMPS.dirt.shades[3]);       // dark contact line under grass
   });
   put('rock', 160, 27, (b, x, y, w, h) => paintField(b, x, y, w, h, RAMPS.footing.shades, 'rock'));
   put('stone', 32, 16, (b, x, y, w, h) => paintStone(b, x, y, w, h, RAMPS.stone.shades, 37));
-  put('stoneCap', 32, 5, (b, x, y, w, h) => paintCap(b, x, y, w, h,
-    rgb(P.stoneCapLight), rgb(P.stoneCapMid), rgb(P.stoneCapDark)));
-  put('grassCap', 16, 5, (b, x, y, w, h) => paintCap(b, x, y, w, h,
-    rgb(P.grassCapLight), rgb(P.grassCapMid), rgb(P.grassCapDark)));
+  put('stoneCap', 32, 5, (b, x, y, w, h) => paintField(b, x, y, w, h, RAMPS.capStone.shades,
+    'stoneCap'));
+  put('grassCap', 16, 5, (b, x, y, w, h) => paintField(b, x, y, w, h, RAMPS.capGrass.shades,
+    'grassCap'));
 
   // Facades: two tiles per parallax layer, tileable in both directions.
   // Four façade tiles per layer: the base tint twice on two window grids, then
   // the warm and the cool relative, one with wide windows and one with a denser
   // floor step. Each tile also carries the light mix that suits its tint, so a
   // warm tower lights warm and a cool tower lights cool.
-  const facades = [
-    ['farWallA', RAMPS.far, { seed: 41, lit: 0.3, bay: 8, pane: 3, shift: 1, step: 10, fy0: 4,
-      cool: 0.35 }],
-    ['farWallB', RAMPS.far, { seed: 47, lit: 0.24, bay: 8, pane: 3, shift: 5, step: 10, fy0: 4,
-      cool: 0.5 }],
-    ['farWallC', RAMPS.farWarm, { seed: 131, lit: 0.27, bay: 12, pane: 5, shift: 2, step: 10,
-      fy0: 4, cool: 0.14 }],
-    ['farWallD', RAMPS.farCool, { seed: 137, lit: 0.21, bay: 8, pane: 3, shift: 3, step: 8,
-      fy0: 0, cool: 0.76 }],
-    ['midWallA', RAMPS.mid, { seed: 53, lit: 0.17, bay: 8, pane: 3, shift: 1, step: 10, fy0: 4,
-      cool: 0.35 }],
-    ['midWallB', RAMPS.mid, { seed: 59, lit: 0.13, bay: 8, pane: 3, shift: 5, step: 10, fy0: 4,
-      cool: 0.5 }],
-    ['midWallC', RAMPS.midWarm, { seed: 139, lit: 0.15, bay: 12, pane: 5, shift: 2, step: 10,
-      fy0: 4, cool: 0.14 }],
-    ['midWallD', RAMPS.midCool, { seed: 149, lit: 0.12, bay: 8, pane: 3, shift: 3, step: 8,
-      fy0: 0, cool: 0.76 }],
-    ['nearWallA', RAMPS.near, { seed: 67, lit: 0.045, bay: 8, pane: 3, shift: 1, step: 10,
-      fy0: 4, cool: 0.3, glass: GLASS_NEAR }],
-    ['nearWallB', RAMPS.near, { seed: 71, lit: 0.03, bay: 8, pane: 3, shift: 5, step: 10,
-      fy0: 4, cool: 0.45, glass: GLASS_NEAR }],
-    ['nearWallC', RAMPS.nearWarm, { seed: 151, lit: 0.04, bay: 12, pane: 5, shift: 2, step: 10,
-      fy0: 4, cool: 0.12, glass: GLASS_NEAR }],
-    ['nearWallD', RAMPS.nearCool, { seed: 157, lit: 0.025, bay: 8, pane: 3, shift: 3, step: 8,
-      fy0: 0, cool: 0.7, glass: GLASS_NEAR }],
-  ];
-  for (const [name, ramp, style] of facades) {
-    put(name, 16, 32, (b, x, y, w, h) => paintFacade(b, x, y, w, h, ramp.shades,
-      style.glass || GLASS, style));
-  }
+  // Ten front designs, one PNG each under render/texturen/, drawn into the cell
+  // of every layer. The canvas filter carries the depth: the far layer stays the
+  // lightest and dullest, the near layer the darkest, so a generated photo still
+  // obeys the value order of DG-P-11. The hue turn gives a design the colour
+  // personality of its tint.
+  // Depth is baked into the files (see tools/comfy/fronttexturen.mjs); the only
+  // thing the atlas adds is the hue personality of a design's tint.
+  const FILTER_PRO_TINT = ['saturate(1)', 'hue-rotate(14deg)', 'hue-rotate(-14deg)'];
+  const vorderZellen = [];
+  C.FRONT_DESIGNS.forEach(([design, tint], i) => {
+    for (const schicht of ['far', 'mid', 'near']) {
+      const name = C.CITY_FRONTS[schicht][i];
+      const [w, h] = C.TILE[name];
+      // The cell is reserved and filled with a dark stand-in here; the texture
+      // lands on it after the painted pixels reach the canvas.
+      put(name, w, h, (b, x, y, tw, th) => b.fill(x, y, tw, th, RAMPS.near.shades[3]));
+      vorderZellen.push({
+        name,
+        design: `${schicht}/${design}`,
+        filter: FILTER_PRO_TINT[tint],
+      });
+    }
+  });
 
   // Three curtain-wall fronts for the mid layer. They differ in pane grid, in
   // how many lights are on, and in where the sheen band falls, so two glass
   // towers next to each other never show the same front.
   const glassFronts = [
-    // All three are 16 x 32: a pane grid only closes on itself when the bay
-    // divides the tile, and a building is 16 px wide by its own grid.
-    ['glassMidA', 16, 32, 83, 0.025, 4, 0.62],
-    ['glassMidB', 16, 32, 89, 0.02, 8, 1.15],
-    ['glassMidC', 16, 32, 97, 0.03, 4, 0.3],
+    // All three share the front grid (32 x 64): a pane grid only closes on itself
+    // when its bay divides the tile, and a building is a whole number of that grid.
+    ['glassMidA', 83, 0.025, 8, 0.62],
+    ['glassMidB', 89, 0.02, 16, 1.15],
+    ['glassMidC', 97, 0.03, 8, 0.3],
   ];
-  for (const [name, tw, th, seed, lit, bay, phase] of glassFronts) {
+  for (const [name, seed, lit, bay, phase] of glassFronts) {
     // The dim window palette: a curtain wall reflects the sky, so its own lights
     // stay quiet next to the bright panes.
-    put(name, tw, th, (b, x, y, w, h) => paintGlassFront(b, x, y, w, h,
+    put(name, ...C.TILE[name], (b, x, y, w, h) => paintGlassFront(b, x, y, w, h,
       RAMPS.glassMid.shades, GLASS_NEAR, seed, lit, bay, phase));
   }
 
@@ -806,6 +734,20 @@ function paintAtlas() {
   const clash = layout.collision();
   if (clash) throw new Error(`atlas cells overlap: ${clash}`);
   buf.commit();
+  // The façade textures land last: they are loaded pictures, not painted pixels,
+  // and each one goes into the cell its design owns in that layer.
+  for (const zelle of vorderZellen) {
+    const rechteck = rects[zelle.name];
+    const bild = texturen.get(zelle.design);
+    if (!bild) throw new Error(`no texture loaded for front ${zelle.design}`);
+    if (bild.width !== rechteck.w || bild.height !== rechteck.h) {
+      throw new Error(`texture ${zelle.design} is ${bild.width}x${bild.height}, `
+        + `cell ${zelle.name} is ${rechteck.w}x${rechteck.h}`);
+    }
+    buf.ctx.filter = zelle.filter;
+    buf.ctx.drawImage(bild, rechteck.x, rechteck.y);
+    buf.ctx.filter = 'none';
+  }
   return { canvas: buf.canvas, rects, heroFrames, enemyFrames };
 }
 
@@ -824,8 +766,8 @@ function putBlob(put, side, frame, dir) {
 }
 
 /** Upload the painted canvas and return the tile table for the renderer. */
-export function createAtlas(gl) {
-  const { canvas, rects, heroFrames, enemyFrames } = paintAtlas();
+export async function createAtlas(gl) {
+  const { canvas, rects, heroFrames, enemyFrames } = await paintAtlas();
   const texture = gl.createTexture();
   gl.bindTexture(gl.TEXTURE_2D, texture);
   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);

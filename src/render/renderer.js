@@ -59,11 +59,11 @@ function enemyFrame(atlas, frames, enemy) {
 }
 
 /** Return a new renderer for one canvas. */
-export function createRenderer(canvas) {
+export async function createRenderer(canvas) {
   const gl = canvas.getContext('webgl2', { alpha: false, antialias: false });
   if (!gl) throw new Error('WebGL2 is not available');
   const programs = createPrograms(gl);
-  const atlas = createAtlas(gl);
+  const atlas = await createAtlas(gl);
   const city = buildCity(C.CITY_SEED, C.LEVEL_WIDTH);
   // One light rim hue per layer, back to front.
   const edgeKeys = ['edgeLightFar', 'edgeLightMid', 'edgeLightNear'];

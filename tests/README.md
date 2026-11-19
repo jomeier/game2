@@ -36,9 +36,9 @@ Git. Exit is 0 when every case passed, 1 with the failed names.
 | `initial` | the hook answers, the run starts with 3 lives |
 | `keys` | ArrowRight, ArrowLeft, and Q move; ArrowUp jumps |
 | `materials` | grass over dirt on the ground, stone body and light cap on a platform |
-| `city-windows` | the far layer holds the most lit windows, the near layer the fewest |
+| `city-windows` | the shipped façade textures light most windows in the far layer and fewest in the near layer |
 | `city-glass` | a few mid-layer towers wear a glass front: random, tall, all three tiles, never the same one twice in a row |
-| `city-tints` | each layer shows all four of its wall tiles, none covers half the layer, none sits twice in a row |
+| `city-tints` | each layer shows all ten of its front designs, none covers half the layer, none sits twice in a row |
 | `tile-fit` | every surface takes a whole number of its tile: ground bands, level width, moon disc, platform bodies, every building |
 | `moon-disc` | the moon measures about 88 px wide and its box corner is sky |
 | `hero-frames` | the hero sprite shows different frames while the player runs |

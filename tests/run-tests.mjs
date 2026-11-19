@@ -60,6 +60,65 @@ function readPalette() {
     },
   };
 }
+/** The share of lit windows in one shipped façade texture, counted from the file.
+ * The layer's value scale (FRONT_LAYER_TON) is baked into the file, so the test
+ * divides it out and then judges brightness on one absolute threshold. Measuring
+ * against a file's own mean fails instead: when nearly every window burns, the mean
+ * rises with them and the same lit wall reads as dark.
+ */
+async function fensterAnteil(design, schicht) {
+  const bild = await decodePngFile(path.join(ROOT, 'src', 'render', 'texturen',
+    `${design}-${schicht}.png`));
+  const skale = C.FRONT_LAYER_TON[schicht];
+  let helle = 0;
+  for (let y = 0; y < bild.height; y += 1) {
+    for (let x = 0; x < bild.width; x += 1) {
+      const [r, g, b] = pixel(bild, x, y);
+      if ((0.299 * r + 0.587 * g + 0.114 * b) / skale > 150) helle += 1;
+    }
+  }
+  return { anteil: helle / (bild.width * bild.height), w: bild.width, h: bild.height };
+}
+
+/** The lit windows of the fronts, measured on the shipped files.
+ * The spec wants the far layer to light most of them and the near layer almost
+ * none (DG-P-11). The fronts are loaded pictures, so that order has to live in
+ * the files: a brightness trick at draw time would leave the repo promising
+ * something the game never ships.
+ */
+async function caseCityWindows() {
+  const gesamt = { far: 0, mid: 0, near: 0 };
+  for (let i = 0; i < C.FRONT_DESIGNS.length; i += 1) {
+    const [design] = C.FRONT_DESIGNS[i];
+    const anteile = {};
+    for (const schicht of Object.keys(gesamt)) {
+      // A texture that outgrew its tile box would stretch on a building. The atlas
+      // build throws on that too, but only in a browser; measuring the file here
+      // names the texture.
+      const [w, h] = C.TILE[C.CITY_FRONTS[schicht][i]];
+      const mess = await fensterAnteil(design, schicht);
+      if (mess.w !== w || mess.h !== h) {
+        throw new Error(`${design}-${schicht}.png is ${mess.w}x${mess.h}, `
+          + `the tile box says ${w}x${h}`);
+      }
+      anteile[schicht] = mess.anteil;
+      gesamt[schicht] += mess.anteil;
+    }
+    // One design may light nothing at all - the dark granite front does not - but
+    // none may light more toward the eye than behind it.
+    if (!(anteile.far >= anteile.mid && anteile.mid >= anteile.near)) {
+      throw new Error(`${design} lights far ${(anteile.far * 100).toFixed(2)}% `
+        + `mid ${(anteile.mid * 100).toFixed(2)}% near ${(anteile.near * 100).toFixed(2)}%`);
+    }
+  }
+  const pro = Object.fromEntries(Object.entries(gesamt).map(([k, v]) => [k, v / C.FRONT_DESIGNS.length]));
+  if (!(pro.far > pro.mid && pro.mid > pro.near)) {
+    throw new Error(`lit share does not fall to the front: far ${(pro.far * 100).toFixed(2)}% `
+      + `mid ${(pro.mid * 100).toFixed(2)}% near ${(pro.near * 100).toFixed(2)}%`);
+  }
+  if (pro.far < 0.01) throw new Error(`the far layer lights only ${(pro.far * 100).toFixed(2)}%`);
+}
+
 const state = (page) => page.evaluate(() => window.__game.state);
 
 /** Start the static server for src/ and return its stop function. */
@@ -126,32 +185,6 @@ function countNear(image, x0, y0, w, h, color, tolerance = 30) {
 /** Return how many pixels of one band belong to a wall ramp, and how many are lit.
  * A raw warm count only says how much wall a band shows; the spec compares the
  * layers, so the case counts lit windows per wall area instead. */
-function windowDensity(image, y0, y1, ramps) {
-  const shades = ramps.map(hexToRgb);
-  const isWall = (p) => shades.some(([wr, wg, wb]) => Math.abs(p[0] - wr) + Math.abs(p[1] - wg)
-    + Math.abs(p[2] - wb) < 26);
-  let wall = 0;
-  let lit = 0;
-  for (let y = y0; y < y1; y += 1) {
-    for (let x = 3; x < 957; x += 1) {
-      const p = pixel(image, x, y);
-      if (isWall(p)) {
-        wall += 1;
-        continue;
-      }
-      // A warm pane only counts for the layer whose wall sits beside it. Without
-      // that test the near band also collects the lit windows of the layers behind
-      // it, which are visible between the near rooftops, and the order is gone.
-      if (p[0] > 150 && p[1] > 110 && p[2] < 150
-        && [pixel(image, x - 3, y), pixel(image, x + 3, y), pixel(image, x, y + 3)]
-          .some(isWall)) {
-        lit += 1;
-        wall += 1;
-      }
-    }
-  }
-  return { wall, lit, density: wall ? lit / wall : 0 };
-}
 
 /** Hold a key and take two shots of the player area, then compare the crops. */
 async function heroFrameDiff(page) {
@@ -411,25 +444,6 @@ async function caseMaterials(page) {
 }
 
 /** The far city layer holds the most lit windows, the near layer the fewest. */
-async function caseCityWindows(page) {
-  await page.evaluate(() => window.__game.api.newRun());
-  await sleep(600);
-  const image = await probeShot(page, 'probe-windows.png');
-  const cfg = await probe(page, () => window.__gameConfig.COLOR);
-  // All three tints of a layer belong to that layer: a band holds base, warm and
-  // cool towers in equal parts.
-  const far = windowDensity(image, 250, 320,
-    [...cfg.wallFar, ...cfg.wallFarWarm, ...cfg.wallFarCool]);
-  const mid = windowDensity(image, 320, 400,
-    [...cfg.wallMid, ...cfg.wallMidWarm, ...cfg.wallMidCool]);
-  const near = windowDensity(image, 400, 478,
-    [...cfg.wallNear, ...cfg.wallNearWarm, ...cfg.wallNearCool]);
-  if (far.lit < 30) throw new Error(`only ${far.lit} lit windows in the far band`);
-  if (!(far.density > mid.density && mid.density >= near.density)) {
-    throw new Error(`lit share does not fall to the front: ${(far.density * 100).toFixed(1)}% / `
-      + `${(mid.density * 100).toFixed(1)}% / ${(near.density * 100).toFixed(1)}%`);
-  }
-}
 
 /** A few mid-layer towers wear a glass front: random, tall, and all three tiles. */
 async function caseCityGlass() {
@@ -502,16 +516,19 @@ async function caseTileFit() {
   }
 }
 
-/** Each layer wears all four of its wall tiles, no tile twice in a row. */
+/** Each layer wears all ten of its front designs, no tile twice in a row. */
 async function caseCityTints() {
   const layers = buildCity(C.CITY_SEED, C.LEVEL_WIDTH);
   for (const name of ['far', 'mid', 'near']) {
     const layer = layers[{ far: 0, mid: 1, near: 2 }[name]];
-    const tiles = C.CITY_WALLS[name];
+    const tiles = C.CITY_FRONTS[name];
+    if (tiles.length !== C.FRONT_DESIGNS.length) {
+      throw new Error(`the ${name} layer lists ${tiles.length} fronts, the design table has ${C.FRONT_DESIGNS.length}`);
+    }
     const walls = layer.shapes.filter((s) => tiles.includes(s.wall));
     const used = new Set(walls.map((s) => s.wall));
     if (used.size < tiles.length) {
-      throw new Error(`the ${name} layer shows ${used.size} of ${tiles.length} wall tiles`);
+      throw new Error(`the ${name} layer shows ${used.size} of ${tiles.length} front designs`);
     }
     // No single tint may swallow the layer, or the variety is only on paper. Half
     // is the bound: four tiles drawn at random land near a quarter each, and the
@@ -800,7 +817,7 @@ async function main() {
     ['initial', () => caseInitial(page)],
     ['keys', () => caseKeys(page)],
     ['materials', () => caseMaterials(page)],
-    ['city-windows', () => caseCityWindows(page)],
+    ['city-windows', () => caseCityWindows()],
     ['city-glass', () => caseCityGlass()],
     ['city-tints', () => caseCityTints()],
     ['tile-fit', () => caseTileFit()],

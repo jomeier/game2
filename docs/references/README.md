@@ -1,10 +1,10 @@
 # Art references
 
-Reference screenshots from shipped 2D platformers, plus four material sheets this
-project generated itself. The research fed `DG-P-10` and `DG-P-11`. These files
-are research material only. Nothing from other games ships in `src/`. Of the
-generated sheets, no picture ships: two of them reached the game as index numbers
-behind the note below, the rest stayed reference.
+Reference screenshots from shipped 2D platformers, plus the material sheets this
+project generated itself. The research fed `DG-P-10` and `DG-P-11`. These files are
+research material only, and nothing from other games ships in `src/`. No generated
+picture ships either: seventeen of the sheets reached the game as tone fields -
+numbers in `src/render/kacheln.js` - and the rest stayed reference.
 
 The screenshots are the same set as in `game1`, because both games follow the same
 art decisions. The four generated material sheets under the second heading exist
@@ -27,33 +27,47 @@ from the official Steam store pages of each game.
 
 ## Generated material sheets
 
-Four sheets the project generated itself with the local ComfyUI (0.45.0) and the
-SDXL checkpoint `lustifySDXLNSFW_apexV8`, one 1024 px sheet per ground or façade
-material: 32 steps, `dpmpp_2m` with `karras`, cfg 5.5, seeds 20261119 to
-20261122, one sheet per seed. The driver script lives outside this repo, the
-numbers in the last column came from its edge and tone report.
+The surfaces of the atlas come from sheets this project generated itself with the
+local ComfyUI (0.45.0) and the SDXL checkpoint `lustifySDXLNSFW_apexV8`: ten
+architecture sheets at 640 x 1280 (one per front design) and eight surface sheets
+at 1024 px, 32 steps, `dpmpp_2m` with `karras`, cfg 5.5, seed 20261130 plus the
+index of the sheet. The bake that turns a sheet into a tile lives outside this
+repo, together with the prompt list and the downloaded sheets, so the sheets are
+not copied in here: eighteen PNGs would weigh about 25 MB. `README.md` in that
+folder names the prompts, and re-running the tool with the same seed reproduces
+every sheet.
 
-They are **form** references. None of the four tiles is seamless (an edge difference
-of 0 would mean seamless, 59 to 134 is a visible break), and none holds the four
-shades per material that `DG-P-10` requires (the sheets use 376 to 2094 colour
-bins). The soil sheet even came back in daylight colours although the prompt asked
-for a night palette.
+What the bake does, and what it cost: an isotropic crop at the exact tile box (no
+squashing), mirrored borders so a tile closes on itself, and four tones at
+20 / 40 / 25 / 15 percent because equal quarters read as noise. A front keeps a
+light mask of the warm windows in the sheet, and the game decides per layer how
+many of them burn.
 
-Two of the four became game material. The bake took the soil sheet and the rock
-footing sheet at the exact tile size of their band, mirrored the edges so a tile
-closes on itself, and split the tones at 20 / 40 / 25 / 15 percent.
-What ships is the resulting index table in `src/render/kacheln.js`: two bits per
-pixel, no picture, the colour still from the ramp in `src/config.js`. The platform
-sheet and the grass sheet did not survive that step - at 32 x 16 the masonry became
-fine noise and the grass band became speckle - so platforms, grass and blades stay
-drawn in `src/render/textures.js`.
+Ten of those sheets became the city's fronts, and they are **not** numbers: the
+architecture sheets are 640 x 1280, and shrinking one into a 16 x 32 tile costs a
+factor of 40 per axis and every recognisable window. They ship instead as thirty PNG
+files - one per design and city layer - in `src/render/texturen/`, at the tile box
+of 32 x 64 (a factor of 20, and no stretch on a building). The tool that cuts them
+mirrors the borders and sets each layer's value step and lit-window share in the
+file itself, so the depth order and the window density are measurable on disk.
 
-| File | Material | Edge difference x / y | Colour bins | Lesson |
+Seven fields ship as numbers in `src/render/kacheln.js`. I measured two surfaces
+and put them back to drawn: the masonry sheet at the 32 x 16 box of a platform
+body became fine scratching instead of courses, and the moon sheet sat off-centre
+so a straight edge fell inside the disc. None of the sheets tiles seamlessly on its
+own (the edge difference ran from 3 to 241 where 0 would mean seamless), which is
+exactly why the bake mirrors its borders instead of trusting the prompt.
+
+| Sheet | Surface | Edge difference x / y | Colour bins | Lesson |
 |---|---|---|---|---|
-| `material-erdreich.png` | ground strip | 89 / 105 | 2094 | A ground cross-section reads as grass lip, then gravel, then larger stones. Pebble size grows with depth, which is the same order the three bands of `DG-P-10` follow. |
-| `material-kopfsteinsohle.png` | rock footing | 103 / 59 | 376 | Cobbles sit in irregular packs, not courses, and each one carries a lit back over a dark seat. Closest sheet to the game's footing, and the tone count is the lowest of the four. |
-| `material-plattformstein.png` | platform stone | 62 / 60 | 401 | Courses of unequal blocks with chipped corners and dark mortar. Stays in the game's cold blue-grey, so it works as a value reference for the platform ramp. |
-| `material-glasfassade.png` | curtain wall | 134 / 82 | 2208 | Real curtain wall: unlit panes differ more than the lit ones, and lit windows are rare and small. Confirms the mix the glass tiles in `DG-P-11` draw. |
+| `material-erdreich.png` | ground strip | 89 / 105 | 2094 | A ground cross-section reads as grass lip, then gravel, then larger stones. Pebble size grows with depth, which is the order the three bands follow. |
+| `material-kopfsteinsohle.png` | rock footing | 103 / 59 | 376 | Cobbles sit in irregular packs, not courses, each with a lit back over a dark seat. |
+| `material-plattformstein.png` | platform body | 62 / 60 | 401 | Unequal courses with chipped corners stayed in the game's cold blue-grey - but at 32 x 16 it lost the structure, so the body is drawn. |
+
+The ten architecture sheets (`front-grid` … `front-slit`, 640 x 1280 each) are not
+copied into this repo; they weigh about 15 MB between them. They live in the tool
+folder next to their prompts and regenerate with one command.
+| `material-glasfassade.png` | curtain wall | 134 / 82 | 2208 | Unlit panes differ more than the lit ones, and lit windows are rare and small. |
 
 ## Reading list
 

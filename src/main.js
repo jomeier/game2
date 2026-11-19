@@ -14,7 +14,8 @@ import { moonPos } from './render/background.js';
 
 const canvas = document.getElementById('game');
 const banner = document.getElementById('gameover');
-const renderer = createRenderer(canvas);
+// The atlas waits for the ten facade textures, so the first frame needs an await.
+const renderer = await createRenderer(canvas);
 const input = createInput(window);
 const spec = buildSpec(C.LEVEL_WIDTH);
 // The step input and the per-frame results, so the hook never reads a world an

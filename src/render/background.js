@@ -66,6 +66,29 @@ function building(random, x, width, height, layer) {
   return shape;
 }
 
+/** The front designs of a layer as a shuffled deck of whole rounds. Inside a
+ * round nothing repeats; at the join of two rounds a repeat is traded away, so
+ * two neighbours never wear the same front.
+ */
+function gestapelteEntwuerfe(random, tiles) {
+  const stapel = [];
+  for (let runde = 0; runde < 8; runde += 1) {
+    const karten = tiles.slice();
+    for (let i = karten.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(random() * (i + 1));
+      [karten[i], karten[j]] = [karten[j], karten[i]];
+    }
+    stapel.push(...karten);
+  }
+  for (let i = 1; i < stapel.length; i += 1) {
+    if (stapel[i] !== stapel[i - 1]) continue;
+    const tausch = stapel.findIndex((k, n) => n > i + 1
+      && k !== stapel[i] && k !== stapel[i + 1]);
+    if (tausch > 0) [stapel[i], stapel[tausch]] = [stapel[tausch], stapel[i]];
+  }
+  return stapel;
+}
+
 /** Pick a tile other than the one the previous building wears: the same tile
  * twice in a row is the first pattern the eye finds.
  */
@@ -87,25 +110,27 @@ function buildLayer(seed, factor, walls, props, span, minH, maxH, gapMin, gapMax
   const random = seeded(seed);
   const shapes = [];
   let x = -260;
-  let lastWall = '';
   let lastGlass = '';
+  // A shuffled deck hands out the front designs: every design of the layer shows
+  // up, and no two neighbours wear the same one. Drawing them at random left a
+  // design unused in a layer, which the city-tints case then caught.
+  const stapel = gestapelteEntwuerfe(random, walls);
+  let stapelRand = 0;
   while (x < span + 260) {
-    // Width and height land on the wall tile's own grid (16 wide, 32 tall), so a
-    // façade tile is never stretched on any building.
-    const width = 32 + Math.round(random() * 6) * 16;    // 32 .. 128
-    const height = Math.round((minH + random() * (maxH - minH)) / 32) * 32;
+    // Width and height land on the wall tile's own grid, so a façade texture is
+    // never stretched on any building.
+    const width = C.CITY_GRID.w * (1 + Math.round(random() * (128 / C.CITY_GRID.w - 1)));
+    const height = Math.round((minH + random() * (maxH - minH)) / C.CITY_GRID.h) * C.CITY_GRID.h;
     const shape = building(random, x, width, height, { props });
-    // The two lists need their own memory: a glass front has to differ from the
-    // previous *glass* tower, and a bricked wall from the previous bricked wall.
-    // Against the neighbour the two lists still hold each other off, because a
-    // glass name is never a wall name.
-    let wall = pickTile(random, walls, lastWall);
+    // Glass is decided first and takes no card from the deck, so the wall designs
+    // still spread over the whole layer.
     if (glass.length > 0 && height >= glassMinH && random() < glassChance) {
-      wall = pickTile(random, glass, lastGlass);
-      lastGlass = wall;
+      shape.wall = pickTile(random, glass, lastGlass);
+      lastGlass = shape.wall;
+    } else {
+      shape.wall = stapel[stapelRand % stapel.length];
+      stapelRand += 1;
     }
-    shape.wall = wall;
-    lastWall = wall;
     shapes.push(shape);
     x += width + gapMin + Math.round(random() * gapMax);
   }
@@ -118,13 +143,13 @@ export function buildCity(seed, levelWidth) {
   const span = levelWidth + C.VIEW_W;
   const props = ['propAntenna', 'propTank', 'propVent'];
   return [
-    buildLayer(seed, C.PARALLAX.far, C.CITY_WALLS.far, props, span, 160, 352, 14, 40),
+    buildLayer(seed, C.PARALLAX.far, C.CITY_FRONTS.far, props, span, 160, 352, 14, 40),
     // Nearly half of the tall mid blocks wears a glass front, drawn per block, so
     // the skyline never shows the same front twice in a row.
-    buildLayer(seed + 101, C.PARALLAX.mid, C.CITY_WALLS.mid, props, span, 128, 288, 18, 52,
+    buildLayer(seed + 101, C.PARALLAX.mid, C.CITY_FRONTS.mid, props, span, 128, 288, 18, 52,
       { glass: C.GLASS_TILES, glassChance: C.GLASS_CHANCE, glassMinH: C.GLASS_MIN_H }),
     // The near layer is a row of dark rooftops: narrow, tall, far apart, so the sky
     // shows between them and the mass never fuses into one wall.
-    buildLayer(seed + 202, C.PARALLAX.near, C.CITY_WALLS.near, [], span, 96, 256, 64, 168),
+    buildLayer(seed + 202, C.PARALLAX.near, C.CITY_FRONTS.near, [], span, 96, 256, 64, 168),
   ];
 }
