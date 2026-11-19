@@ -1,11 +1,13 @@
 # Art references
 
-Reference screenshots from shipped 2D platformers. The research fed `DG-P-10`
-and `DG-P-11`. These files are research material only. Nothing from other games
-ships in `src/`.
+Reference screenshots from shipped 2D platformers, plus four material sheets this
+project generated itself. The research fed `DG-P-10` and `DG-P-11`. These files
+are research material only. Nothing from other games ships in `src/`, and none of
+the generated sheets ships either: the game paints the atlas at runtime.
 
-The folder is the same set as in `game1`, because both games follow the same art
-decisions.
+The screenshots are the same set as in `game1`, because both games follow the same
+art decisions. The four generated material sheets under the second heading exist
+only here.
 
 Each row names the lesson the project takes from the image. The images come
 from the official Steam store pages of each game.
@@ -21,6 +23,28 @@ from the official Steam store pages of each game.
 | `ori-01.jpg` | Ori and the Blind Forest | [Steam CDN](https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/261570/ss_c617379b9d195eed0342f3ecf86898513e702b96.1920x1080.jpg?t=1667504148) | Painterly layers with light shafts. The small glowing spirit is the brightest, smallest object, so it reads instantly. |
 | `ori-02.jpg` | Ori and the Blind Forest | [Steam CDN](https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/261570/ss_38552fb1001c03b5ccce2e3979270b2ecfd944c2.1920x1080.jpg?t=1667504148) | Dark warm hall with depth from lighter distant layers. One bright silhouette carries the whole focal point. |
 | `sonic-mania-01.jpg` | Sonic Mania | [Steam CDN](https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/584400/ss_27efb8f61892a9bd732952c76dae9dd7ad1b6748.1920x1080.jpg?t=1785856230) | Retro palette tiles and saturated sprites. Horizontal parallax bands (sea, sand, palms, water) stack opaque layers for depth. |
+
+## Generated material sheets
+
+Four sheets the project generated itself with the local ComfyUI (0.45.0) and the
+SDXL checkpoint `lustifySDXLNSFW_apexV8`, one 1024 px sheet per ground or façade
+material: 32 steps, `dpmpp_2m` with `karras`, cfg 5.5, seeds 20261119 to
+20261122, one sheet per seed. The driver script lives outside this repo, the
+numbers in the last column came from its edge and tone report.
+
+They are **form** references, not value references. None of the four tiles
+seamlessly (an edge difference of 0 would mean seamless, 59 to 134 is a visible
+break), and none holds the four shades per material that `DG-P-10` requires (the
+sheets use 376 to 2094 colour bins). The soil sheet even came back in daylight
+colours although the prompt asked for a night palette. So the sheets show how to
+build each material, and no pixel of them reaches the game.
+
+| File | Material | Edge difference x / y | Colour bins | Lesson |
+|---|---|---|---|---|
+| `material-erdreich.png` | ground strip | 89 / 105 | 2094 | A ground cross-section reads as grass lip, then gravel, then larger stones. Pebble size grows with depth, which is the same order the three bands of `DG-P-10` follow. |
+| `material-kopfsteinsohle.png` | rock footing | 103 / 59 | 376 | Cobbles sit in irregular packs, not courses, and each one carries a lit back over a dark seat. Closest sheet to the game's footing, and the tone count is the lowest of the four. |
+| `material-plattformstein.png` | platform stone | 62 / 60 | 401 | Courses of unequal blocks with chipped corners and dark mortar. Stays in the game's cold blue-grey, so it works as a value reference for the platform ramp. |
+| `material-glasfassade.png` | curtain wall | 134 / 82 | 2208 | Real curtain wall: unlit panes differ more than the lit ones, and lit windows are rare and small. Confirms the mix the glass tiles in `DG-P-11` draw. |
 
 ## Reading list
 
