@@ -11,10 +11,12 @@ blame the picture.
 
 `LL-01` **A generated sheet does not survive an arbitrary shrink.** I baked the ten
 city fronts from 640 x 1280 sheets into 16 x 32 tiles: a factor of 40 in each axis. Every window fell to one pixel and the skyline lost all detail - the textures
-and the skyline stopped being recognizable. The fronts now ship as thirty PNG files
-at their tile box (32 x 64, factor 20, one per design and layer) and load before the
-first frame, so a tower still looks like its sheet. `DG-P-10` carries that decision
-and its cost, `src/render/texturen/README.md` the files.
+and the skyline stopped being recognizable. The fronts now ship as loaded pictures at
+a box the model could fill, and load before the first frame: the far row as
+ten façades on the 32 x 64 tile box (factor 20), the two nearer rows as one house
+sprite per building (`src/render/sprites/`, 128 px wide). A tower still looks like
+its sheet. `DG-P-10` carries that decision and its cost, `src/render/texturen/README.md`
+and `src/render/sprites/README.md` the files.
 
 `LL-02` **Four equal tone shares read as noise.** The first bake split a sheet into
 four equal quarters and every material turned into TV static, because one tone dominates a real surface. The bake now splits at 20 / 40 / 25 / 15 percent.
@@ -88,3 +90,30 @@ frame, reads the player position, and then cuts the helmet out of an earlier sho
 one slow frame and the camera offset points at an empty wall. Before hunting an art
 bug, run the suite a second time: a case that moves the world while it measures it
 needs that confirmation.
+
+`LL-14` **A segmentation model cuts out what glows, and a matte has a direction.**
+For the house sprites I asked for a magenta backdrop and a flood fill; the model
+painted a grey wall and the fill found nothing. BiRefNet worked, but it lifted the
+glowing moon out from behind the tower instead of the tower, and ComfyUI's alpha
+saver wants the mask inverted - without `InvertMask` every house arrived as a hole in
+an opaque plate. Two habits came out of that: score every candidate on measurable
+shape (wide at the feet, standing on the bottom edge, filling its own silhouette) and
+keep the best of several, and look at the result as a **contact sheet over the game's
+own sky**. Five unusable sprites had already passed my numeric checks.
+
+`LL-15` **A narrow generation frame produces obelisks.** Asked for a 96 x 192 tower,
+the model drew a spike: half the sprites of that size class were needles and spires
+with no wall to hang windows on. Every sprite class is 128 px wide now and the rows
+differ only in height (and the near row is short). When a generated picture misses the
+point, check first whether the requested shape is something the model associates with
+the subject at all.
+
+`LL-16` **A soft reward lets a rectangle win.** My sprite scorer summed coverage,
+width at the feet and fill (about 0.8 points for a box that fills its frame) and gave
+only 0.2 for leaving sky above the roof - so a solid rectangle outscored a tower with
+a crown, and three sprites came back flat-topped. A design rule ("these rows are not
+rectangles") has to be a hard rejection in the picker, not a term in a sum: a
+candidate whose top row spans most of the width, or that covers over 90 % of the
+frame, is now discarded unless no crowned candidate exists at all. The tool's reject
+(> 22 % top row) is deliberately stricter than the test it feeds (25 %), so nothing
+the tool ships can fail the test.

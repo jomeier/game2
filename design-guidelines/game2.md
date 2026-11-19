@@ -326,29 +326,33 @@ Per-object dynamic lighting: shader cost for little visual gain.
 
 **Decision.** The game draws every surface from a 2D texture in one atlas. The
 game paints that atlas at runtime into an offscreen canvas and uploads it once, and
-no build step exists. One part of it does not arrive as paint: the ten façade
-designs of the city ship as thirty PNG files in `src/render/texturen/` and load
-before the first frame.
+no build step exists. Two parts of it do not arrive as paint: the ten far-row façades
+ship as ten PNG files in `src/render/texturen/`, and the twenty-four houses of the
+mid and near rows ship as RGBA sprites in `src/render/sprites/`. Both load before the
+first frame, and the sprites ride on a second texture of their own.
 
 That exception is a decision, not an oversight, and this text names its cost: the
-game now has a loading step before frame one, and thirty files to keep in step with
-`TILE`. It pays because the alternative measurably destroyed the art. The
-sheets behind the fronts are 640 x 1280; baked into a 16 x 32 tile that is a factor
-of 40 per axis, every window collapsed to one pixel and the skyline lost all
-recognisable detail (`LL-01` in `docs/lessons.md`). The textures now use the tile
-box itself, 32 x 64, a factor of 20, and they still look like their sheets.
+game now has a loading step before frame one, thirty-four files to keep in step with
+`TILE`, and one more texture to bind. It pays because the alternative measurably
+destroyed the art. The sheets behind the fronts are 640 x 1280; baked into a 16 x 32
+tile that is a factor of 40 per axis, every window collapsed to one pixel and the
+skyline lost all recognisable detail (`LL-01` in `docs/lessons.md`). The far textures
+now use the tile box itself, 32 x 64, a factor of 20, and the houses of the two near
+rows are sheets at four times their box, cut to 128 x 192 and 128 x 256 (mid) and to
+128 x 112 and 128 x 160 (the short near row).
 
-Everything else in the atlas stays painted at runtime: the ground bands and their
-form fields, the platform stone and its caps, the moon, the glass curtain walls, the
-sprites, the props, and the five pixel font. The rules:
+Everything else stays painted at runtime: the ground bands and their form fields, the
+platform stone and its caps, the moon, the hero and enemy frames, the props, and the
+five pixel font. The rules:
 
 | Rule | Detail |
 |---|---|
-| One ramp per material | Painted materials use four shades of one hue. A pixel picks a shade by index, never a mixed color. The façade textures keep the colour range of their sheet, and only they may. |
-| Named materials | `grass`, `tufts`, `dirt` and `rock` for the ground, `stone` plus `stoneCap` for a platform, `farWall`, `midWall`, `nearWall` and `glassMid` for the city, `moon`, `shadow`, `bomb`, two hearts, three roof props. |
+| One ramp per material | Painted materials use four shades of one hue. A pixel picks a shade by index, never a mixed color. The façade textures and the house sprites keep the colour range of their sheet, and only they may. |
+| Named materials | `grass`, `tufts`, `dirt` and `rock` for the ground, `stone` plus `stoneCap` for a platform, `farWall` for the tiled far city row and twelve sprite houses for the two near rows, `moon`, `shadow`, `bomb`, two hearts, three roof props. |
 | Tileable tiles | Ground, stone and façade tiles repeat on whole pixel counts. `TILE` in `config.js` holds every tile box, and every surface takes a whole number of its tile: a building is 16 px wide by 32 px tall, a platform body is one 16 px row and a whole number of 32 px columns, so no tile is ever scaled. The `tile-fit` case checks all of it. |
 | Baked tone fields | The ground bands, their blades and the two cap edges paint their form from a two-bit index table in `render/kacheln.js`; the shade still comes from the material's ramp. A field must match its tile box exactly or the atlas build throws. |
-| Façade textures | One PNG per design and layer (32 x 64) in `render/texturen/`, loaded before the first frame. The file carries the layer's value step and its lit-window share, so `DG-P-11` holds in the files and a test can read them. A texture whose size is not its tile box throws at atlas build. |
+| Façade textures | One PNG per far-row design (32 x 64) in `render/texturen/`, loaded before the first frame. The file carries the row's value step and its lit-window share, so `DG-P-11` holds in the files and a test can read them. A texture whose size is not its tile box throws at atlas build. |
+| House sprites | One RGBA PNG per design and size class in `render/sprites/`. A sprite owns its silhouette: the building box equals the sprite box, the alpha carries the sky, and nothing is painted over it. Alpha is hard-edged - a half-covering cell would draw a dark seam around the house. |
 | Ground bands | The ground strip is three bands whose heights add up to its depth: `GRASS_BAND`, `SOIL_BAND`, `ROCK_BAND`. Grass blades are a separate tile drawn one tile above the standable line. |
 | One clip per cell | A paint job may only write inside its own atlas cell. A brush that reaches past the edge is dropped. |
 | Half-texel inset | The uv rect of a tile is inset by half a texel on all four sides, so a neighbour cannot bleed in. |
@@ -371,10 +375,10 @@ sprites. Sources: `https://ferdwolf.github.io/teemo.dev/games/celeste.html`,
 `https://www.mandible.net/writing/super-meat-boy`.
 
 **Rejected.** A pre-made PNG *atlas* stands rejected: one big sheet bought by an
-importer, and it blurs at non-integer scales. Small per-design textures that load
-into a painted atlas stand accepted, because the alternative lost the art - see the
-decision text above. What was not given up: no build step, no network request, and
-the atlas is still one upload. Linear filtering and mipmaps stand
+importer, and it blurs at non-integer scales. Small per-design pictures that the game
+loads into its own atlas stand accepted, because the alternative lost the art - see
+the decision text above. What was not given up: no build step, no network request,
+and each sheet is still one upload. Linear filtering and mipmaps stand
 rejected: they smear the pixel look. One shared ramp for all materials stands
 rejected: grass and stone then read as the same surface. A narrow ground tile
 stands rejected: the first soil tile was 16 px wide, so its patches repeated
@@ -387,8 +391,7 @@ tone dominates a real surface - the fields in `kacheln.js` sit at
 20 / 40 / 25 / 15 percent. Baking every surface stands rejected on
 measurement: the same masonry sheet at the 32 x 16 box of a platform body lost its
 block structure and became fine scratching, and a generated moon sat off-centre in
-its sheet so a straight edge fell inside the disc. Those two stay drawn, as do the
-curtain walls, which are a reflection model and not a surface. Thinning lit windows
+its sheet so a straight edge fell inside the disc. Those two stay drawn. Thinning lit windows
 pixel by pixel stands rejected too: it shredded window runs into tinsel, so a run
 now burns or stays dark as a whole. A DOM control hint stands rejected, see
 `DG-P-13`.
@@ -400,21 +403,25 @@ The draw order runs sky and stars, moon, then the city layers back to front.
 Buildings cover the moon wherever they overlap it; the moon shows only in the
 gaps between silhouettes. Depth comes from the value steps, never from
 transparency. The front layer uses the darkest values, the back layers lighter
-and duller ones. Each layer wears the ten front designs of `FRONT_DESIGNS`, dealt
-out by a shuffled deck so a layer shows every design and no two neighbours repeat;
-a design keeps the hue personality of its tint (base, warm or cool) while the layer
-owns the value steps, so the layer stays one distance while the skyline stops
-repeating. For the fronts the value steps are numbers in `FRONT_LAYER_TON` and the
-generating tool scales them into the PNG files, so the depth order sits in the repo
-rather than in a canvas filter at draw time. A tall mid-layer tower wears a glass
-curtain wall instead of a bricked façade with `GLASS_CHANCE`, and only above
-`GLASS_MIN_H`; the tile is drawn so that two glass towers never wear the same front
-in a row. The glass ramp stays under the brightest shade of the layer behind it, so
-the value order holds.
+and duller ones. The far row wears the ten front designs of `FRONT_DESIGNS` as
+tiled walls; the mid row and the near row wear the twelve sprite designs of
+`SPRITE_MITTE` and `SPRITE_VORNE`, one picture per building. A shuffled deck deals
+each row's designs, so every design shows up and no two neighbours repeat, and the
+card also says which size class the building takes. Each design keeps its own
+silhouette - setbacks, spires, tanks, masts, gables - which is what gives the skyline
+the varied top edge a row of flat boxes cannot. The near row keeps the short classes:
+a foreground plane is a narrow dark strip along the bottom of the picture, and the
+mid towers have to stay visible above it. A design keeps the hue personality of
+its tint while the row owns the value steps, so the row stays one distance. For the
+pictures the value steps are numbers in `FRONT_LAYER_TON` and the generating tool
+scales them into the files, so the depth order sits in the repo rather than in a
+canvas filter at draw time.
 
 **Reason.** The spec demands opaque layers and forbids the moon shining through
-buildings. Alpha-blended buildings leak the moon and break the hard silhouettes
-of `DG-P-09`. Opaque stacking keeps every edge crisp and needs no blending state
+buildings. Opaque means the layer as a whole: a sprite's transparent cells show the
+sky and the moon exactly where sky sits between two houses. A body that
+fades the moon through its wall reads as a bug and breaks the hard silhouettes of
+`DG-P-09`. Opaque stacking keeps every edge crisp and needs no blending state
 changes. Super Meat Boy splits plane from depth with a value gap; Sonic Mania
 stacks opaque horizontal parallax bands. Sources:
 `https://www.styledex.com/design/super-meat-boy/`,
@@ -424,8 +431,10 @@ stacks opaque horizontal parallax bands. Sources:
 reads as a bug. Blur-based depth of field: a blur pass costs shader time and the
 opaque rule blocks it. Glass in the near layer: that layer carries silhouette and
 no detail, and a pane grid in the darkest layer only fuses the rooftops into one
-mass. A fixed step for the glass towers, such as every third block: the eye finds
-the rule within two screens and the skyline reads as a stamped pattern.
+mass. Painted crowns stacked on a tiled wall: three tiers of a fixed 16 x 32 block
+read as a stapled box, and the art already knows how to draw a roof. A fixed step for the tall size class, such as every third block: the eye finds
+the rule within two screens and the skyline reads as a stamped pattern, so the size
+class rides on the deck card that deals the design.
 
 ## DG-P-12: Game over as one DOM headline
 

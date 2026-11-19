@@ -2,9 +2,11 @@
 
 Reference screenshots from shipped 2D platformers, plus the material sheets this
 project generated itself. The research fed `DG-P-10` and `DG-P-11`. These files are
-research material only, and nothing from other games ships in `src/`. No generated
-picture ships either: seventeen of the sheets reached the game as tone fields -
-numbers in `src/render/kacheln.js` - and the rest stayed reference.
+research material only, and nothing from other games ships in `src/` and nothing was
+copied from an asset pack. Generated pictures do ship in two shapes: the far row of
+the city and the twenty-four houses of the two nearer rows are cut from sheets this
+project generated, and the ground surfaces reached the game as tone fields - numbers
+in `src/render/kacheln.js`.
 
 The screenshots are the same set as in `game1`, because both games follow the same
 art decisions. The four generated material sheets under the second heading exist
@@ -43,13 +45,13 @@ squashing), mirrored borders so a tile closes on itself, and four tones at
 light mask of the warm windows in the sheet, and the game decides per layer how
 many of them burn.
 
-Ten of those sheets became the city's fronts, and they are **not** numbers: the
+Ten of those sheets became the far row's fronts, and they are **not** numbers: the
 architecture sheets are 640 x 1280, and shrinking one into a 16 x 32 tile costs a
-factor of 40 per axis and every recognisable window. They ship instead as thirty PNG
-files - one per design and city layer - in `src/render/texturen/`, at the tile box
-of 32 x 64 (a factor of 20, and no stretch on a building). The tool that cuts them
-mirrors the borders and sets each layer's value step and lit-window share in the
-file itself, so the depth order and the window density are measurable on disk.
+factor of 40 per axis and every recognisable window. They ship instead as ten PNG
+files in `src/render/texturen/`, at the tile box of 32 x 64 (a factor of 20, and no
+stretch on a building). The tool that cuts them mirrors the borders and sets the
+row's value step and lit-window share in the file itself, so the depth order and the
+window density are measurable on disk.
 
 Seven fields ship as numbers in `src/render/kacheln.js`. I measured two surfaces
 and put them back to drawn: the masonry sheet at the 32 x 16 box of a platform
@@ -67,7 +69,37 @@ exactly why the bake mirrors its borders instead of trusting the prompt.
 The ten architecture sheets (`front-grid` … `front-slit`, 640 x 1280 each) are not
 copied into this repo; they weigh about 15 MB between them. They live in the tool
 folder next to their prompts and regenerate with one command.
-| `material-glasfassade.png` | curtain wall | 134 / 82 | 2208 | Unlit panes differ more than the lit ones, and lit windows are rare and small. |
+
+## Generated house sprites
+
+The mid row and the near row are one picture per building, so the picture has to own
+a silhouette. `tools/comfy/hochhaus.mjs` sends one SDXL sheet per design and size
+class (the mid row 128 x 192 and 128 x 256, the short near row 128 x 112 and
+128 x 160, each sheet at four times its box), then
+`LoadBackgroundRemovalModel` + `RemoveBackground` (BiRefNet, `birefnet.safetensors`,
+444 MB in `models/background_removal/`) + `InvertMask` + `SaveImageWithAlpha` return
+an RGBA sheet. Three findings came out of that step and each one is now a step in
+the tool:
+
+- A chroma key does not work. "flat solid magenta background #ff00ff" produced a
+  dark grey wall, and a flood fill from the borders found no background at all.
+- `RemoveBackground` reports the object as white, while the alpha saver expects
+  white to mean transparent. Without `InvertMask` between them every house arrived
+  as a hole in an opaque plate.
+- BiRefNet segments *the salient thing*, and a glowing moon behind a tower is more
+  salient than the tower. So the prompt bans moons and sky detail, and the tool
+  sends three candidates per sprite and keeps the one that scores best: a real
+  building is wide at its feet, stands on the bottom edge, and fills the frame of
+  its own silhouette. A moon remnant or a needle scores near nothing.
+
+A contact sheet (`tools/comfy/kontaktbogen.mjs`) puts all twenty-four sprites over
+the game's sky, because a soft mask edge that draws a dark seam around a house stays
+invisible in a statistics line. The tool therefore drops a cell that covers less than
+a third of its source: alpha in these files is hard.
+
+The sheets again stay in the tool folder (about 8 MB). The tool multiplies the row's
+value step (`FRONT_LAYER_TON`) in while it cuts, so `tests/run-tests.mjs` can divide
+it out and measure the window density of each row on disk.
 
 ## Reading list
 
@@ -83,3 +115,20 @@ Design breakdowns behind the guidelines:
 - Ori art pipeline: <https://airborn-studios.com/news/ori-pc-launch>
 - Ori GDC talk: <https://www.gdcvault.com/play/1022203/Creating-the-Art-of>
 - Sonic Mania post-mortem: <https://www.gamedeveloper.com/design/the-sound-of-a-platformer-a-sonic-mania-post-mortem>
+
+Parallax-city rules behind the sprite rows (read 2026-11-19, all five agree on the
+depth order and on a varied top edge):
+
+- Planes get simpler and quieter with distance, and the foreground frames without
+  covering the play area: <https://piximelon.com/guides/pixel-art-backgrounds/>
+- Three planes, silhouettes before texture, the darkest pixels last, near-plane
+  accents only: <https://pixeli.pebbly.space/knowledge/rules/61-landscapes-and-terrain>
+- Layer authoring: transparent above the silhouette, solid at the bottom, seam edge
+  equals edge, and a top edge with rhythm instead of a regular zigzag:
+  <https://pixeli.pebbly.space/knowledge/rules/62-parallax-backgrounds>
+- Further layers sit closer to the sky in value, lose saturation and interior
+  detail; build each layer by mixing toward the sky colour:
+  <https://comfyengine.org/blog/pixel-art-backgrounds-parallax/>
+- Landmark shapes every one to two screens (spire, helipad, slanted crown, stepped
+  deco, crane): <https://mmorwynn.itch.io/metropolis> and
+  <https://kelano-studio.itch.io/skyline-buildings-30-2d-skyscrapers-64x64>

@@ -89,15 +89,6 @@ function gestapelteEntwuerfe(random, tiles) {
   return stapel;
 }
 
-/** Pick a tile other than the one the previous building wears: the same tile
- * twice in a row is the first pattern the eye finds.
- */
-function pickTile(random, tiles, previous) {
-  const name = tiles[Math.floor(random() * tiles.length)];
-  if (name !== previous || tiles.length < 2) return name;
-  return tiles[(tiles.indexOf(name) + 1) % tiles.length];
-}
-
 /** Build one layer: a row of buildings with sky between them.
  * Every block draws its wall from the layer's tiles, which differ in tint and in
  * window grid, and no tile turns up twice in a row. `glass` with `glassChance`
@@ -105,32 +96,35 @@ function pickTile(random, tiles, previous) {
  * keeps short blocks out of it, because a glass front needs height before the
  * pane grid reads as a grid.
  */
-function buildLayer(seed, factor, walls, props, span, minH, maxH, gapMin, gapMax,
-  { glass = [], glassChance = 0, glassMinH = 0 } = {}) {
+/** Build one city row across the span.
+ *
+ * `spriten: true` hands out whole pictures: a sprite owns its silhouette, so the
+ * building is exactly the sprite box and the card dealt from the deck says which
+ * size class it wears. Without it the row tiles a wall texture, and width and height
+ * land on the texture's own grid so nothing stretches.
+ *
+ * A shuffled deck hands out the designs in both modes: every design of the row shows
+ * up, and no two neighbours wear the same one. Drawing them at random left a design
+ * unused in a row, which the city-tints case then caught.
+ */
+function buildLayer(seed, factor, walls, span, gapMin, gapMax,
+  { spriten = false, props = [] } = {}) {
   const random = seeded(seed);
   const shapes = [];
-  let x = -260;
-  let lastGlass = '';
-  // A shuffled deck hands out the front designs: every design of the layer shows
-  // up, and no two neighbours wear the same one. Drawing them at random left a
-  // design unused in a layer, which the city-tints case then caught.
   const stapel = gestapelteEntwuerfe(random, walls);
   let stapelRand = 0;
+  let x = -260;
   while (x < span + 260) {
-    // Width and height land on the wall tile's own grid, so a façade texture is
-    // never stretched on any building.
-    const width = C.CITY_GRID.w * (1 + Math.round(random() * (128 / C.CITY_GRID.w - 1)));
-    const height = Math.round((minH + random() * (maxH - minH)) / C.CITY_GRID.h) * C.CITY_GRID.h;
+    const wall = stapel[stapelRand % stapel.length];
+    stapelRand += 1;
+    const [width, height] = spriten
+      ? C.TILE[wall]
+      : [
+        C.CITY_GRID.w * (1 + Math.round(random() * (128 / C.CITY_GRID.w - 1))),
+        C.CITY_GRID.h * (3 + Math.round(random() * 2)),
+      ];
     const shape = building(random, x, width, height, { props });
-    // Glass is decided first and takes no card from the deck, so the wall designs
-    // still spread over the whole layer.
-    if (glass.length > 0 && height >= glassMinH && random() < glassChance) {
-      shape.wall = pickTile(random, glass, lastGlass);
-      lastGlass = shape.wall;
-    } else {
-      shape.wall = stapel[stapelRand % stapel.length];
-      stapelRand += 1;
-    }
+    shape.wall = wall;
     shapes.push(shape);
     x += width + gapMin + Math.round(random() * gapMax);
   }
@@ -143,13 +137,17 @@ export function buildCity(seed, levelWidth) {
   const span = levelWidth + C.VIEW_W;
   const props = ['propAntenna', 'propTank', 'propVent'];
   return [
-    buildLayer(seed, C.PARALLAX.far, C.CITY_FRONTS.far, props, span, 160, 352, 14, 40),
-    // Nearly half of the tall mid blocks wears a glass front, drawn per block, so
-    // the skyline never shows the same front twice in a row.
-    buildLayer(seed + 101, C.PARALLAX.mid, C.CITY_FRONTS.mid, props, span, 128, 288, 18, 52,
-      { glass: C.GLASS_TILES, glassChance: C.GLASS_CHANCE, glassMinH: C.GLASS_MIN_H }),
-    // The near layer is a row of dark rooftops: narrow, tall, far apart, so the sky
-    // shows between them and the mass never fuses into one wall.
-    buildLayer(seed + 202, C.PARALLAX.near, C.CITY_FRONTS.near, [], span, 96, 256, 64, 168),
+    // The far row is a tiled wall: a distant tower is a wall of windows, and a
+    // repeating tile reads as distance. 192 to 320 px tall on its own grid.
+    buildLayer(seed, C.PARALLAX.far, C.CITY_FRONTS.far, span, 14, 40, { props }),
+    // The mid row is a sprite per building: every tower brings its own crown, so
+    // the skyline is a rhythm of shapes instead of a row of flat boxes.
+    buildLayer(seed + 101, C.PARALLAX.mid, C.SPRITE_MITTE.map((k) => k.name), span, 18, 52,
+      { spriten: true, props }),
+    // The near row is the dark strip at the bottom of the picture: short sprites
+    // (112 and 160 px) with room between them, so the mid towers stay visible above
+    // it and the mass never fuses into one wall.
+    buildLayer(seed + 202, C.PARALLAX.near, C.SPRITE_VORNE.map((k) => k.name), span, 80, 180,
+      { spriten: true }),
   ];
 }

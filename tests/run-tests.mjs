@@ -60,63 +60,84 @@ function readPalette() {
     },
   };
 }
-/** The share of lit windows in one shipped façade texture, counted from the file.
- * The layer's value scale (FRONT_LAYER_TON) is baked into the file, so the test
- * divides it out and then judges brightness on one absolute threshold. Measuring
- * against a file's own mean fails instead: when nearly every window burns, the mean
- * rises with them and the same lit wall reads as dark.
+/** How much of a picture is lit window: pixels above one absolute threshold,
+ * after the row's own baked value scale (FRONT_LAYER_TON) is divided out. Sprites
+ * count only their covered pixels, so a tall thin tower is not punished for the
+ * sky around it.
  */
-async function fensterAnteil(design, schicht) {
-  const bild = await decodePngFile(path.join(ROOT, 'src', 'render', 'texturen',
-    `${design}-${schicht}.png`));
-  const skale = C.FRONT_LAYER_TON[schicht];
+async function fensterAnteil(datei, skale, alpha = false) {
+  const bild = await decodePngFile(path.join(ROOT, 'src', 'render', ...datei));
   let helle = 0;
+  let zellen = 0;
   for (let y = 0; y < bild.height; y += 1) {
     for (let x = 0; x < bild.width; x += 1) {
-      const [r, g, b] = pixel(bild, x, y);
-      if ((0.299 * r + 0.587 * g + 0.114 * b) / skale > 150) helle += 1;
+      const p = pixel(bild, x, y);
+      if (alpha && p[3] <= 127) continue;
+      zellen += 1;
+      if ((0.299 * p[0] + 0.587 * p[1] + 0.114 * p[2]) / skale > 150) helle += 1;
     }
   }
-  return { anteil: helle / (bild.width * bild.height), w: bild.width, h: bild.height };
+  return zellen === 0 ? 0 : helle / zellen;
 }
 
-/** The lit windows of the fronts, measured on the shipped files.
- * The spec wants the far layer to light most of them and the near layer almost
- * none (DG-P-11). The fronts are loaded pictures, so that order has to live in
- * the files: a brightness trick at draw time would leave the repo promising
- * something the game never ships.
+const fernAnteil = (design) => fensterAnteil(
+  ['texturen', `${design}-far.png`], C.FRONT_LAYER_TON.far,
+);
+
+const spriteAnteil = (klasse, reihe) => fensterAnteil(
+  ['sprites', `${klasse.name}.png`], C.FRONT_LAYER_TON[reihe], true,
+);
+
+/** The lit windows of the three city rows, measured on the shipped files.
+ * The spec wants the far row to light most of them and the near row almost none
+ * (DG-P-11). Both the façades and the sprites are loaded pictures, so that order
+ * has to live in the files: a brightness trick at draw time would leave the repo
+ * promising something the game never ships.
  */
 async function caseCityWindows() {
   const gesamt = { far: 0, mid: 0, near: 0 };
   for (let i = 0; i < C.FRONT_DESIGNS.length; i += 1) {
     const [design] = C.FRONT_DESIGNS[i];
-    const anteile = {};
-    for (const schicht of Object.keys(gesamt)) {
-      // A texture that outgrew its tile box would stretch on a building. The atlas
-      // build throws on that too, but only in a browser; measuring the file here
-      // names the texture.
-      const [w, h] = C.TILE[C.CITY_FRONTS[schicht][i]];
-      const mess = await fensterAnteil(design, schicht);
-      if (mess.w !== w || mess.h !== h) {
-        throw new Error(`${design}-${schicht}.png is ${mess.w}x${mess.h}, `
-          + `the tile box says ${w}x${h}`);
-      }
-      anteile[schicht] = mess.anteil;
-      gesamt[schicht] += mess.anteil;
+    // A texture that outgrew its tile box would stretch on a building. The atlas
+    // build throws on that too, but only in a browser; measuring the file here
+    // names the texture.
+    const [w, h] = C.TILE[C.CITY_FRONTS.far[i]];
+    const bild = await decodePngFile(path.join(ROOT, 'src', 'render', 'texturen',
+      `${design}-far.png`));
+    if (bild.width !== w || bild.height !== h) {
+      throw new Error(`${design}-far.png is ${bild.width}x${bild.height}, the tile box `
+        + `says ${w}x${h}`);
     }
-    // One design may light nothing at all - the dark granite front does not - but
-    // none may light more toward the eye than behind it.
-    if (!(anteile.far >= anteile.mid && anteile.mid >= anteile.near)) {
-      throw new Error(`${design} lights far ${(anteile.far * 100).toFixed(2)}% `
-        + `mid ${(anteile.mid * 100).toFixed(2)}% near ${(anteile.near * 100).toFixed(2)}%`);
+    gesamt.far += await fernAnteil(design);
+  }
+  for (const [liste, schlussel] of [[C.SPRITE_MITTE, 'mid'], [C.SPRITE_VORNE, 'near']]) {
+    for (const klasse of liste) {
+      const sprite = await decodePngFile(path.join(ROOT, 'src', 'render', 'sprites',
+        `${klasse.name}.png`));
+      const [w, h] = C.TILE[klasse.name];
+      if (sprite.width !== w || sprite.height !== h) {
+        throw new Error(`sprite ${klasse.name} is ${sprite.width}x${sprite.height}, config `
+          + `says ${w}x${h}`);
+      }
+      // A sprite owns a free silhouette: its top row must show the sky.
+      let oben = 0;
+      for (let x = 0; x < sprite.width; x += 1) if (pixel(sprite, x, 0)[3] > 127) oben += 1;
+      if (oben > sprite.width * 0.25) {
+        throw new Error(`${klasse.name} covers ${oben} px of its top row: a flat roof`);
+      }
+      gesamt[schlussel] += await spriteAnteil(klasse, schlussel);
     }
   }
-  const pro = Object.fromEntries(Object.entries(gesamt).map(([k, v]) => [k, v / C.FRONT_DESIGNS.length]));
+  const pro = {
+    far: gesamt.far / C.FRONT_DESIGNS.length,
+    mid: gesamt.mid / C.SPRITE_MITTE.length,
+    near: gesamt.near / C.SPRITE_VORNE.length,
+  };
   if (!(pro.far > pro.mid && pro.mid > pro.near)) {
     throw new Error(`lit share does not fall to the front: far ${(pro.far * 100).toFixed(2)}% `
       + `mid ${(pro.mid * 100).toFixed(2)}% near ${(pro.near * 100).toFixed(2)}%`);
   }
-  if (pro.far < 0.01) throw new Error(`the far layer lights only ${(pro.far * 100).toFixed(2)}%`);
+  if (pro.far < 0.01) throw new Error(`the far row lights only ${(pro.far * 100).toFixed(2)}%`);
 }
 
 const state = (page) => page.evaluate(() => window.__game.state);
@@ -446,38 +467,6 @@ async function caseMaterials(page) {
 /** The far city layer holds the most lit windows, the near layer the fewest. */
 
 /** A few mid-layer towers wear a glass front: random, tall, and all three tiles. */
-async function caseCityGlass() {
-  const layers = buildCity(C.CITY_SEED, C.LEVEL_WIDTH);
-  const mid = layers[1];
-  const glass = mid.shapes.filter((s) => C.GLASS_TILES.includes(s.wall));
-  const share = glass.length / mid.shapes.length;
-  if (share < 0.06 || share > 0.5) {
-    throw new Error(`glass fronts cover ${(share * 100).toFixed(1)}% of the mid layer`);
-  }
-  const used = new Set(glass.map((s) => s.wall));
-  if (used.size < C.GLASS_TILES.length) {
-    throw new Error(`only ${used.size} of ${C.GLASS_TILES.length} glass fronts are used`);
-  }
-  const short = glass.filter((s) => s.h < C.GLASS_MIN_H);
-  if (short.length > 0) {
-    throw new Error(`${short.length} glass fronts sit on towers under ${C.GLASS_MIN_H} px`);
-  }
-  // Glass is a mid-layer material: the near layer carries silhouette only.
-  for (const [name, layer] of [['far', layers[0]], ['near', layers[2]]]) {
-    const wrong = layer.shapes.filter((s) => C.GLASS_TILES.includes(s.wall));
-    if (wrong.length > 0) throw new Error(`${wrong.length} glass fronts in the ${name} layer`);
-  }
-  // Two glass towers in a row never wear the same front.
-  for (let i = 1; i < glass.length; i += 1) {
-    if (glass[i].wall === glass[i - 1].wall) {
-      throw new Error(`${glass[i].wall} sits on two glass towers in a row`);
-    }
-  }
-  // Random, not ruled: the towers with glass must not sit on a fixed step.
-  const places = glass.map((s) => mid.shapes.indexOf(s));
-  const steps = places.slice(1).map((v, i) => v - places[i]);
-  if (new Set(steps).size < 2) throw new Error(`glass fronts sit on a fixed step of ${steps[0]}`);
-}
 
 /** Every surface takes a whole number of its tile, so no tile is ever scaled.
  * A scaled tile breaks the pixel grid, and the atlas is drawn for nearest
@@ -521,10 +510,8 @@ async function caseCityTints() {
   const layers = buildCity(C.CITY_SEED, C.LEVEL_WIDTH);
   for (const name of ['far', 'mid', 'near']) {
     const layer = layers[{ far: 0, mid: 1, near: 2 }[name]];
-    const tiles = C.CITY_FRONTS[name];
-    if (tiles.length !== C.FRONT_DESIGNS.length) {
-      throw new Error(`the ${name} layer lists ${tiles.length} fronts, the design table has ${C.FRONT_DESIGNS.length}`);
-    }
+    const tiles = layer.walls;
+    if (tiles.length === 0) throw new Error(`the ${name} layer holds no tiles`);
     const walls = layer.shapes.filter((s) => tiles.includes(s.wall));
     const used = new Set(walls.map((s) => s.wall));
     if (used.size < tiles.length) {
@@ -818,7 +805,6 @@ async function main() {
     ['keys', () => caseKeys(page)],
     ['materials', () => caseMaterials(page)],
     ['city-windows', () => caseCityWindows()],
-    ['city-glass', () => caseCityGlass()],
     ['city-tints', () => caseCityTints()],
     ['tile-fit', () => caseTileFit()],
     ['moon-disc', () => caseMoonDisc(page)],

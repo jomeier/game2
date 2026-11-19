@@ -120,22 +120,37 @@ function paintStone(buf, x0, y0, w, h, ramp, seed) {
  * four shades no matter which sheet the form came from. A field that does not fit
  * its tile throws: a scaled tile would break the pixel grid.
  */
-/** Load the ten facade textures. The atlas is only complete once they are in, so
- * the game waits for them before its first frame. A missing file rejects: a tower
- * with a blank front is worse than a visible error.
+/** Load the far-layer facade textures: ten designs, one file each. The atlas is
+ * only complete once they are in, so the game waits for them before its first
+ * frame. A missing file rejects: a tower with a blank front is worse than a
+ * visible error.
  */
 async function ladeTexturen() {
   const texturen = new Map();
   const aufgaben = [];
-  for (const schicht of ['far', 'mid', 'near']) {
-    for (const [design] of C.FRONT_DESIGNS) {
-      const bild = new Image();
-      bild.src = `render/texturen/${design}-${schicht}.png`;
-      aufgaben.push(bild.decode().then(() => texturen.set(`${schicht}/${design}`, bild)));
-    }
+  for (const [design] of C.FRONT_DESIGNS) {
+    const bild = new Image();
+    bild.src = `render/texturen/${design}-far.png`;
+    aufgaben.push(bild.decode().then(() => texturen.set(design, bild)));
   }
   await Promise.all(aufgaben);
   return texturen;
+}
+
+/** Load the twenty-four house sprites of the mid and the near row. A sprite owns
+ * its whole silhouette, so it is one picture of one building and it keeps its
+ * alpha channel on the way into the atlas.
+ */
+async function ladeSpriten() {
+  const spriten = new Map();
+  const aufgaben = [];
+  for (const klasse of [...C.SPRITE_MITTE, ...C.SPRITE_VORNE]) {
+    const bild = new Image();
+    bild.src = `render/sprites/${klasse.name}.png`;
+    aufgaben.push(bild.decode().then(() => spriten.set(klasse.name, bild)));
+  }
+  await Promise.all(aufgaben);
+  return spriten;
 }
 
 /** Paint a real moon as a lit sphere with seas and a few large craters.
@@ -228,50 +243,6 @@ function paintField(buf, x0, y0, w, h, ramp, name) {
   for (let y = 0; y < h; y += 1) {
     for (let x = 0; x < w; x += 1) {
       buf.set(x0 + x, y0 + y, ramp[feld.pixel[y * w + x]]);
-    }
-  }
-}
-
-/** Paint a glass curtain wall: a mullion grid whose panes reflect the sky.
- * A pane picks its shade from a reflection value: bright where the sky is, dark
- * toward the street, plus a sheen band that crosses the front on a diagonal.
- * Without that band every tower shows the same flat gradient, which is what makes
- * a curtain wall boring. Some panes hold a closed blind, a few hold a light, so
- * the wall reads as a building and not as a mirror.
- */
-function paintGlassFront(buf, x0, y0, w, h, ramp, glass, seed, litChance, bay, phase) {
-  const random = seeded(seed);
-  buf.fill(x0, y0, w, h, ramp[3]);                    // the mullion field
-  const pane = bay - 1;                               // one pixel of mullion between
-  for (let fy = 0; fy + bay <= h; fy += bay) {
-    for (let fx = 0; fx + bay <= w; fx += bay) {
-      const u = (fx + 0.5) / w;
-      const v = (fy + 0.5) / h;
-      const sky = 1 - v * 0.8;                        // sky above, street below
-      const sheen = Math.max(0, 1 - Math.abs(u * 0.9 + v * 0.9 - phase) / 0.34);
-      // A curtain wall mirrors the bright band at the horizon, so one row of panes
-      // across the front carries it. Without that band the glass stays flat and
-      // reads as a dull wall next to the lit brick towers.
-      const horizon = Math.max(0, 1 - Math.abs(v - (0.34 + phase * 0.22)) / 0.09);
-      // The reflection has to walk over all four shades from the roof to the
-      // street, and it has to stay louder than the per-pane noise: a wide noise
-      // term turns a curtain wall into confetti and the reflection is gone.
-      const value = random() > 0.93 ? 0.08
-        : sky * 0.72 + sheen * 0.5 + horizon * 0.5 + random() * 0.08;
-      const shade = Math.max(0, Math.min(3, 3 - Math.floor(value * 3.99)));
-      const px = x0 + fx;
-      const py = y0 + fy;
-      if (random() < litChance) {
-        // Mostly a cool lamp behind the glass: warm panes in a grid read as a
-        // polka-dot pattern, because the eye links them into rows.
-        buf.fill(px, py, pane, pane, random() > 0.35 ? glass[1] : glass[0]);
-        buf.fill(px, py, pane, 1, glass[1]);          // the frame above a lit pane
-      } else {
-        buf.fill(px, py, pane, pane, ramp[shade]);
-        // One lighter pixel along the top is what sells the grid as glass.
-        buf.fill(px, py, pane, 1, ramp[Math.max(0, shade - 1)]);
-        if (shade === 0) buf.set(px, py, glass[3]);   // a glint on the brightest pane
-      }
     }
   }
 }
@@ -484,7 +455,6 @@ const RAMPS = {
   dirt: makeRamp([P.dirtLight, P.dirt, P.dirtDark, P.dirtDeep]),
   stone: makeRamp([P.stoneLight, P.stone, P.stoneDark, P.stoneDeep]),
   footing: makeRamp(P.rockFooting),
-  glassMid: makeRamp(P.glassMid),
   capStone: makeRamp([P.stoneCapLight, P.stoneCapMid, P.stoneCapDark, P.stoneDeep]),
   capGrass: makeRamp([P.grassCapLight, P.grassCapMid, P.grassCapDark, P.grassDeep]),
   far: makeRamp(P.wallFar),
@@ -499,11 +469,6 @@ const RAMPS = {
   moon: makeRamp(P.moonRamp),
 };
 
-// Index order matters: the front and glass painters read
-// [lit warm, lit cool, unlit, frame].
-const GLASS = [rgb(P.window), rgb(P.windowCool), rgb(P.windowDark), rgb(P.propSteelLight)];
-const GLASS_NEAR = [rgb(P.windowNearWarm), rgb(P.windowNearCool), rgb(P.windowDark),
-  rgb(P.propSteelLight)];
 const HERO = {
   body: rgb(P.heroBody), light: rgb(P.heroLight), mid: rgb(P.heroMid),
   dark: rgb(P.heroDark), outline: rgb(P.spriteOutline), visor: rgb(P.heroVisor),
@@ -522,6 +487,13 @@ const ENEMY_H = 24;
 // painted tiles ever did. Two megabytes of texture memory, one upload.
 const ATLAS_W = 1024;
 const ATLAS_H = 512;
+// The house sprites ride on a second texture: they are loaded pictures with an
+// alpha channel, and the shader picks a unit by the tile's atlas flag.
+// Twenty-four sprites, 128 px wide and 192 or 256 tall, are 688 thousand pixels.
+// Six fit in a row of the sheet and a row of the tall class is 257 px high with the
+// gutter, so four rows need 1028 px: 1280 leaves room without a third size class.
+const SPRITE_ATLAS_W = 1280;
+const SPRITE_ATLAS_H = 1280;
 const GUTTER = 1;
 
 /** Return a row-based cell allocator for the atlas.
@@ -568,7 +540,7 @@ function createLayout(width, height) {
 
 /** Paint the whole atlas and return the canvas with its tile table. */
 async function paintAtlas() {
-  const texturen = await ladeTexturen();
+  const [texturen, spriten] = await Promise.all([ladeTexturen(), ladeSpriten()]);
   const buf = createBuffer(ATLAS_W, ATLAS_H);
   const layout = createLayout(ATLAS_W, ATLAS_H);
   const rects = {};
@@ -613,51 +585,25 @@ async function paintAtlas() {
   put('grassCap', 16, 5, (b, x, y, w, h) => paintField(b, x, y, w, h, RAMPS.capGrass.shades,
     'grassCap'));
 
-  // Facades: two tiles per parallax layer, tileable in both directions.
-  // Four façade tiles per layer: the base tint twice on two window grids, then
-  // the warm and the cool relative, one with wide windows and one with a denser
-  // floor step. Each tile also carries the light mix that suits its tint, so a
-  // warm tower lights warm and a cool tower lights cool.
-  // Ten front designs, one PNG each under render/texturen/, drawn into the cell
-  // of every layer. The canvas filter carries the depth: the far layer stays the
-  // lightest and dullest, the near layer the darkest, so a generated photo still
-  // obeys the value order of DG-P-11. The hue turn gives a design the colour
-  // personality of its tint.
-  // Depth is baked into the files (see tools/comfy/fronttexturen.mjs); the only
-  // thing the atlas adds is the hue personality of a design's tint.
   const FILTER_PRO_TINT = ['saturate(1)', 'hue-rotate(14deg)', 'hue-rotate(-14deg)'];
+  // The far row wears the ten facade textures. They are the only row still tiled:
+  // a distant tower is a wall of windows, so a repeating tile reads as distance,
+  // while a near tower would read as wallpaper (DG-P-10).
   const vorderZellen = [];
   C.FRONT_DESIGNS.forEach(([design, tint], i) => {
-    for (const schicht of ['far', 'mid', 'near']) {
-      const name = C.CITY_FRONTS[schicht][i];
-      const [w, h] = C.TILE[name];
-      // The cell is reserved and filled with a dark stand-in here; the texture
-      // lands on it after the painted pixels reach the canvas.
-      put(name, w, h, (b, x, y, tw, th) => b.fill(x, y, tw, th, RAMPS.near.shades[3]));
-      vorderZellen.push({
-        name,
-        design: `${schicht}/${design}`,
-        filter: FILTER_PRO_TINT[tint],
-      });
-    }
+    const name = C.CITY_FRONTS.far[i];
+    const [w, h] = C.TILE[name];
+    // The cell is reserved and filled with a dark stand-in here; the texture lands
+    // on it after the painted pixels reach the canvas. The only thing the canvas
+    // adds is the hue personality of the design's tint - the value step of the
+    // layer is baked into the file (see tools/comfy/fronttexturen.mjs).
+    put(name, w, h, (b, x, y, tw, th) => b.fill(x, y, tw, th, RAMPS.near.shades[3]));
+    vorderZellen.push({
+      name,
+      design,
+      filter: FILTER_PRO_TINT[tint],
+    });
   });
-
-  // Three curtain-wall fronts for the mid layer. They differ in pane grid, in
-  // how many lights are on, and in where the sheen band falls, so two glass
-  // towers next to each other never show the same front.
-  const glassFronts = [
-    // All three share the front grid (32 x 64): a pane grid only closes on itself
-    // when its bay divides the tile, and a building is a whole number of that grid.
-    ['glassMidA', 83, 0.025, 8, 0.62],
-    ['glassMidB', 89, 0.02, 16, 1.15],
-    ['glassMidC', 97, 0.03, 8, 0.3],
-  ];
-  for (const [name, seed, lit, bay, phase] of glassFronts) {
-    // The dim window palette: a curtain wall reflects the sky, so its own lights
-    // stay quiet next to the bright panes.
-    put(name, ...C.TILE[name], (b, x, y, w, h) => paintGlassFront(b, x, y, w, h,
-      RAMPS.glassMid.shades, GLASS_NEAR, seed, lit, bay, phase));
-  }
 
   // Roof props for the skyline silhouette.
   const steel = rgb(P.propSteel);
@@ -734,6 +680,7 @@ async function paintAtlas() {
   const clash = layout.collision();
   if (clash) throw new Error(`atlas cells overlap: ${clash}`);
   buf.commit();
+  const sprites = paintSpriteAtlas(spriten);
   // The façade textures land last: they are loaded pictures, not painted pixels,
   // and each one goes into the cell its design owns in that layer.
   for (const zelle of vorderZellen) {
@@ -748,7 +695,31 @@ async function paintAtlas() {
     buf.ctx.drawImage(bild, rechteck.x, rechteck.y);
     buf.ctx.filter = 'none';
   }
-  return { canvas: buf.canvas, rects, heroFrames, enemyFrames };
+  return { canvas: buf.canvas, rects, heroFrames, enemyFrames, sprites };
+}
+
+/** Reserve a cell per sprite and draw the picture into it. Nothing is painted
+ * here: the art arrives as a picture with alpha, so its cell keeps whatever the
+ * file says, including the transparent band above a roof.
+ */
+function paintSpriteAtlas(spriten) {
+  const buf = createBuffer(SPRITE_ATLAS_W, SPRITE_ATLAS_H);
+  const layout = createLayout(SPRITE_ATLAS_W, SPRITE_ATLAS_H);
+  const rects = {};
+  for (const { name } of [...C.SPRITE_MITTE, ...C.SPRITE_VORNE]) {
+    const [w, h] = C.TILE[name];
+    const rect = layout.take(name, w, h);
+    rects[name] = rect;
+    const bild = spriten.get(name);
+    if (!bild) throw new Error(`no sprite loaded for ${name}`);
+    if (bild.width !== w || bild.height !== h) {
+      throw new Error(`sprite ${name} is ${bild.width}x${bild.height}, config says ${w}x${h}`);
+    }
+    buf.ctx.drawImage(bild, rect.x, rect.y);
+  }
+  const clash = layout.collision();
+  if (clash) throw new Error(`sprite atlas cells overlap: ${clash}`);
+  return { canvas: buf.canvas, rects };
 }
 
 /** Take a cell and paint one hero pose into it. */
@@ -765,35 +736,54 @@ function putBlob(put, side, frame, dir) {
   return name;
 }
 
-/** Upload the painted canvas and return the tile table for the renderer. */
+/** Upload both atlases and return the tile table for the renderer. The sprites
+ * live on their own texture because they are pictures, not paint: they need
+ * another canvas, and the shader picks the unit by the tile's atlas.
+ */
 export async function createAtlas(gl) {
-  const { canvas, rects, heroFrames, enemyFrames } = await paintAtlas();
-  const texture = gl.createTexture();
-  gl.bindTexture(gl.TEXTURE_2D, texture);
-  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const { canvas, rects, heroFrames, enemyFrames, sprites } = await paintAtlas();
+
+  /** Upload one canvas with the pixel-grid settings of this game. */
+  function lade(canvasObj) {
+    const texture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    // The sprite alpha is stored straight, and the blend in renderer.js is
+    // SRC_ALPHA, so the upload must not premultiply it a second time.
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvasObj);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    return texture;
+  }
+
+  const texture = lade(canvas);
+  const spriteTexture = lade(sprites.canvas);
 
   /** Return the tile record of one painted rect. The uv is inset by half a texel. */
-  const tile = (rect) => ({
+  const tile = (rect, atlasCanvas) => ({
     uv: [
-      (rect.x + 0.5) / canvas.width,
-      (rect.y + 0.5) / canvas.height,
-      (rect.x + rect.w - 0.5) / canvas.width,
-      (rect.y + rect.h - 0.5) / canvas.height,
+      (rect.x + 0.5) / atlasCanvas.width,
+      (rect.y + 0.5) / atlasCanvas.height,
+      (rect.x + rect.w - 0.5) / atlasCanvas.width,
+      (rect.y + rect.h - 0.5) / atlasCanvas.height,
     ],
     w: rect.w,
     h: rect.h,
   });
 
   const tiles = {};
-  for (const [name, rect] of Object.entries(rects)) tiles[name] = tile(rect);
+  for (const [name, rect] of Object.entries(rects)) tiles[name] = tile(rect, canvas);
+  // The sprite tiles carry the flag that sends the draw to the second texture.
+  for (const [name, rect] of Object.entries(sprites.rects)) {
+    tiles[name] = { ...tile(rect, sprites.canvas), sprite: true };
+  }
 
   return {
     texture,
+    spriteTexture,
     width: canvas.width,
     height: canvas.height,
     tiles,

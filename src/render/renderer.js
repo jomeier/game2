@@ -100,8 +100,17 @@ export async function createRenderer(canvas) {
       else gl.uniform2fv(location, value);
     }
     if (item.texture) {
+      // Two textures, one sampler: the house sprites live on their own upload
+      // because they arrive as pictures, so the draw says which unit the sampler
+      // should read. Only the city layers ever switch, a handful of times a frame.
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, atlas.texture);
+      gl.uniform1i(program.uniforms.u_atlas, 0);
+      if (item.sprite) {
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, atlas.spriteTexture);
+        gl.uniform1i(program.uniforms.u_atlas, 1);
+      }
     }
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   }
@@ -113,11 +122,14 @@ export async function createRenderer(canvas) {
     for (const item of queue) run(item);
   }
 
-  /** Queue one atlas tile over a pixel rect, tiled by whole repeats. */
+  /** Queue one atlas tile over a pixel rect, tiled by whole repeats. A sprite tile
+   * is drawn once, at its own size: it owns a whole building.
+   */
   function rect(order, tile, x, y, w, h, tilesX, tilesY) {
     push(order, {
       program: 'atlas',
       texture: true,
+      sprite: tile.sprite === true,
       uniforms: {
         u_rect: [x, y, w, h],
         u_uv: tile.uv,
@@ -171,22 +183,28 @@ export async function createRenderer(canvas) {
     }
   }
 
-  /** Queue the three city layers: wall, roof prop, light rim, dark seam, cornice. */
+  /** Queue the three city rows. The far row is a tiled wall with a light rim; the
+   * mid and the near row are sprites that carry their own crown, outline and lit
+   * roof edge, so nothing is painted over them.
+   */
   function drawCity(world, cameraX) {
     city.forEach((layer, index) => {
       const edgeLight = C.COLOR[edgeKeys[index]];
       for (const shape of layer.shapes) {
         const x = Math.round(shape.x - cameraX * layer.factor);
         if (x + shape.w < -20 || x > C.VIEW_W + 20) continue;
-        rect(LAYER.city + index, atlas.tiles[shape.wall], x, shape.y, shape.w, shape.h);
+        const tile = atlas.tiles[shape.wall];
+        rect(LAYER.city + index, tile, x, shape.y, shape.w, shape.h);
+        if (tile.sprite) continue;
         if (shape.prop) {
           const prop = atlas.tiles[shape.prop];
           rect(LAYER.city + index, prop, x + Math.round(shape.w / 2 - prop.w / 2),
             shape.y - prop.h, prop.w, prop.h, 1, 1);
         }
-        // The three thin bands are what separates one building from the next.
+        // The two side bands separate one tiled tower from the next. No band across
+        // the top: the sprite rows in front are taller, so a horizontal line at the
+        // head of a far tower would float free in the sky.
         solid(LAYER.city + index, x, shape.y, 1, shape.h, edgeLight);
-        solid(LAYER.city + index, x, shape.y, shape.w, 1, edgeLight);
         solid(LAYER.city + index, x + shape.w - 1, shape.y, 1, shape.h, C.COLOR.edgeDark);
       }
     });

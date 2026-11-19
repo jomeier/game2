@@ -6,11 +6,12 @@ atlas, the sky, and the city. It reads world state and never changes it. See rul
 
 | File | Task |
 |---|---|
-| `renderer.js` | The context, the draw queue, the camera shift, the layer order, the sprite frame choice. `createRenderer` is async: the atlas waits for the façade textures. |
+| `renderer.js` | The context, the draw queue, the camera shift, the layer order, the sprite frame choice, the atlas unit a draw reads. `createRenderer` is async: the atlases wait for the loaded pictures. |
 | `shaders.js` | The three programs: `quad`, `glow`, `atlas`. |
-| `textures.js` | The atlas: a cell allocator, material tiles, roof props, the moon, sprite frame strips, a 3x5 pixel font. |
+| `textures.js` | The two atlases: a cell allocator, material tiles, roof props, the moon, sprite frame strips, a 3x5 pixel font, and the loader for the loaded pictures. |
 | `kacheln.js` | Seven baked tone fields for the ground and the cap edges, two bits per pixel: form only, the shade comes from the ramp. |
-| `texturen/` | Thirty façade PNGs (ten designs, three layers) at their tile box. `textures.js` loads them before the first frame. |
+| `texturen/` | Ten façade PNGs for the far row, at the 32 x 64 tile box. |
+| `sprites/` | Twenty-four house PNGs with alpha (six mid designs, six near designs, two size classes each, all 128 px wide). One picture is one building. |
 | `background.js` | Stars, the horizon haze, the moon arc, the three city layers and their roof props. |
 
 ## Commands
@@ -35,7 +36,7 @@ at most three times.
 | 5 | horizon haze bands | `quad` |
 | 10 | stars, and a spark on the bright ones | `quad`, `atlas` |
 | 20-21 | moon halo, then the moon disc | `glow`, `atlas` |
-| 30-32 | city far, mid, near: wall, roof prop, light rim, cornice, dark seam | `atlas`, `quad` |
+| 30-32 | city far (tiled wall, roof prop, light rim, cornice, dark seam) and the sprite rows mid and near | `atlas`, `quad` |
 | 40 | ground: grass band, soil, rock footing, blades above the line | `atlas` |
 | 50 | platforms: stone body, then the light cap row | `atlas` |
 | 60 | contact shadow under the hero and every enemy | `atlas` |
@@ -49,13 +50,16 @@ See rule `DG-P-11`.
 
 ## The atlas
 
-`textures.js` paints the atlas into an offscreen canvas at startup, drops the thirty
-façade PNGs of `texturen/` onto their cells, and uploads the whole 1024 x 512 sheet
-once with `NEAREST` filtering. Painting and loading are asynchronous, so
-`createAtlas(gl)`, `createRenderer(canvas)` and the first line of `main.js` await
-them: `createAtlas` returns `{ texture, tiles, hero, enemy }`. Each entry in `tiles`
-is `{ uv, w, h }`, and the uv is inset by half a texel so a neighbour cannot bleed
-in.
+`textures.js` paints one atlas into an offscreen canvas at startup and fills a
+second one with the twenty-four house PNGs of `sprites/`; both upload once with
+`NEAREST` filtering, at 1024 x 512 and 1280 x 1280. Painting and loading are
+asynchronous, so `createAtlas(gl)`, `createRenderer(canvas)` and the first line of
+`main.js` await them: `createAtlas` returns
+`{ texture, spriteTexture, tiles, hero, enemy }`. Each entry in `tiles` is
+`{ uv, w, h }`, sprite tiles also carry `sprite: true`, and the uv is inset by half
+a texel so a neighbour cannot bleed in. The `atlas` program holds one sampler, so a
+sprite draw binds the second texture to unit 1 and points the sampler at it; only
+the city rows switch.
 
 No file names an atlas position. `createLayout` hands out the next free cell to
 every tile, and `paintAtlas` throws with both names when two cells still share a
@@ -68,8 +72,8 @@ pixels at the helmet every other stride.
 | `grass`, `tufts`, `dirt`, `rock` | the ground: grass band, blades above the standable line, soil, rock footing | a sheet in `docs/references/`, baked |
 | `stone` | a platform body with block joints and chips | drawn here |
 | `stoneCap`, `grassCap` | the light top edge of a platform, a grass edge | a sheet in `docs/references/`, baked |
-| `farGrid` … `nearSlit` | the ten front designs in three layers: slab grid, art-deco ribs, arched gothic, moderne bands, bay windows, brick tenement with fire escapes, corniced storeys, broad piers, lit chequer, brutalist slits | one sheet per design, baked, recoloured per layer |
-| `glassMidA/B/C` | the curtain-wall fronts of the mid layer: three pane grids, three sheen phases | drawn here (a reflection model, not a surface) |
+| `farGrid` … `farSlit` | the ten front designs of the far row: slab grid, art-deco ribs, arched gothic, moderne bands, bay windows, brick tenement with fire escapes, corniced storeys, broad piers, lit chequer, brutalist slits | one sheet per design, baked into the tile box, value step in the file |
+| `deco-192` … `antenna-256` | the twenty-four house sprites of the mid and near rows, on the second texture | one sheet per design and size class, cut out and kept in alpha |
 | `propAntenna`, `propTank`, `propVent` | roof silhouettes | drawn here |
 | `moon` | the moon disc: sphere shading, maria, craters, alpha outside the disc | drawn here |
 | `shadow`, `spark` | the contact shadow under an entity, the bright star cross | drawn here |
@@ -94,19 +98,22 @@ distance for an enemy, so no module keeps animation state.
 - A band must not step to a new shade at one fixed height, and its patches must not
   be plain rectangles: both read as stacked planks, so the soil is painted as blobs
   with a jittered span per row.
-- A curtain wall is a reflection, not a light grid. Each pane picks its shade from
-  the sky above, the street below, one sheen band and the reflected horizon; the
-  per-pane noise stays under a third of a shade step. Wider noise turns the front
-  into confetti, and lit panes then read as polka dots. Glass exists in the mid
-  layer only: the near layer carries silhouette, not detail.
-- A city layer owns ten front designs (`FRONT_DESIGNS` in [../config.js](../config.js)):
+- The far row owns ten front designs (`FRONT_DESIGNS` in [../config.js](../config.js)):
   a slab grid, art-deco ribs, arched gothic, moderne bands, bay windows, a brick
   tenement with fire escapes, corniced storeys, broad piers, a lit chequer, and
   brutalist slits. Each design keeps one colour personality (base, warm, or cool)
-  while the layer owns the value steps, so ten different towers still read as one
-  distance. `CITY_FRONTS` names the tile of a design inside a layer, and the layer's
-  value step (`FRONT_LAYER_TON`) and lit-window share are baked into the PNG of that
-  tile rather than applied while drawing.
+  while the row owns the value steps, so ten different towers still read as one
+  distance. `CITY_FRONTS` names the tile of a design, and the row's value step
+  (`FRONT_LAYER_TON`) and lit-window share are baked into the PNG rather than
+  applied while drawing.
+- The mid row and the near row are sprites: `SPRITE_MITTE` and `SPRITE_VORNE` in
+  [../config.js](../config.js) hold the twelve designs and their size classes
+  (`SPRITE_KLASSEN`: 128 x 192 and 128 x 256 for the mid row, 128 x 112 and 128 x 160
+  for the short near row). A sprite owns its whole silhouette, so the building box
+  **is** the sprite box - nothing is tiled, nothing is stretched, and nothing is
+  painted over it: the crown, the outline and the lit roof edge live in the art.
+  A sprite carries alpha, so its cell is not opaque, and its row's value step is
+  baked into the file like the far row's.
 - Each paint job carries a clip box and may only write inside its own atlas cell.
   Before the allocator existed, the stone mortar bled into the dirt cell and made
   the ground read blue.
@@ -124,11 +131,11 @@ distance for an enemy, so no module keeps animation state.
   thinning each pixel on its own shredded the windows into tinsel. Four surfaces
   stayed drawn after measurement: a platform body (`stone`) became
   fine scratching at its 32 x 16 box, the moon sheet sat off-centre and left a
-  straight edge inside the disc, and the glass fronts are a reflection model
-  rather than a surface. Sprites, the five pixel font and the props are drawn
+  straight edge inside the disc. Sprites, the five pixel font and the props are drawn
   anyway - a sheet cannot hold a six frame run cycle or a readable glyph.
-- Building heights land on `CITY_GRID.h` (64 px) and widths on `CITY_GRID.w`
-  (32 px), the façade texture's own grid, so a façade texture never stretches. The
+- Far-row buildings land on the façade grid (`CITY_GRID`: 32 px wide, 64 px tall),
+  so a façade texture never stretches. Sprite buildings take their size class from
+  the deck that deals them. The
 façade tiles carry no full width floor lines: those made the three layers read as
 one wallpaper pattern.
 - A mirrored sprite swaps the uv x pair; see `mirrored()` in `renderer.js`.

@@ -53,9 +53,12 @@ The game is a 2D platformer. It runs in the browser. It uses JavaScript and WebG
 7. The three city layers show building façades with window rows. Windows are lit
    in the far layer most of all and in the near layer least of all. Inside one
    layer the towers differ in wall tint and in window grid, but the difference
-   stays slight: the layer still reads as one distance. A few of the tall
-   mid-layer towers wear a glass curtain wall instead: its panes reflect the
-   sky, and the choice is random, so the skyline never looks ruled.
+   stays slight: the layer still reads as one distance. The far row repeats a wall
+   tile across each tower; the mid row and the near row show one picture per
+   building, so a tower keeps its own crown - setbacks, spires, tanks, masts - and
+   the sky shows through the gaps a rectangular box would have filled. Every design
+   of a row appears in the level and no two neighbours wear the same one, so the
+   skyline never looks ruled.
 8. The moon is a disc with dark seas and craters. It has a round edge, not a
    square one.
 
@@ -85,5 +88,6 @@ The game is a 2D platformer. It runs in the browser. It uses JavaScript and WebG
 3. The script saves screenshots to `shots/`.
 4. The script also checks pixels: the three ground bands, the stone of a platform,
    the lit windows of a city layer, the round edge of the moon, and the frames of
-   the player sprite. It also checks the city layout itself: which towers wear a
-   glass front and how they are spread over the level.
+   the player sprite. It also checks the city layout itself: that a row shows all of
+   its designs, that no design repeats on neighbours, and that a building picture is
+   not a full rectangle.
