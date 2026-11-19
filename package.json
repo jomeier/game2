@@ -1,0 +1,13 @@
+{
+  "name": "game2",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Night-city 2D platformer in WebGL2, built from the game1 documentation, with headless Chrome tests.",
+  "scripts": {
+    "test": "node tests/run-tests.mjs"
+  },
+  "devDependencies": {
+    "puppeteer-core": "^24.0.0"
+  }
+}

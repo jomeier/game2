@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<!-- game2: night-city platformer. Served by python3 -m http.server. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <link rel="icon" href="data:,">
+  <title>game2 — night city platformer</title>
+  <style>
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: #05070f;
+      overflow: hidden;
+    }
+    #wrap {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    /* The canvas keeps the 16:9 logical viewport (DG-P-04). */
+    #game {
+      width: min(100vw, calc(100vh * 16 / 9));
+      height: min(100vh, calc(100vw * 9 / 16));
+      display: block;
+    }
+    /* DG-P-12: the one DOM text node of the project (docs/spec.md). */
+    #gameover {
+      position: absolute;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      margin: 0;
+      font: 700 46px/1 ui-monospace, monospace;
+      letter-spacing: 8px;
+      color: #f0544e;
+      text-shadow: 0 0 18px rgba(240, 84, 78, 0.55);
+    }
+  </style>
+</head>
+<body>
+  <div id="wrap">
+    <canvas id="game" width="960" height="540"></canvas>
+    <h1 id="gameover">GAME OVER</h1>
+  </div>
+  <script type="module" src="./main.js"></script>
+</body>
+</html>
