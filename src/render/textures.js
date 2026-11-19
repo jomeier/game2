@@ -1,12 +1,15 @@
 // The runtime pixel-art atlas of game2 (DG-P-10).
 // No image file ships with the game: this module paints every tile and sprite
 // frame into one offscreen canvas at startup and uploads it once as a texture.
-// Each material has a small ramp of 4 shades, so surfaces read as one hue with
-// depth instead of as noise. Sprites are painted as frame strips: the renderer
-// picks a frame from the world time, so the player runs and the enemies shuffle.
-// A fixed seed keeps every pixel identical across runs, so shots stay comparable.
+// Ground and stone take their tone field from ./kacheln.js - numbers, not pixels -
+// and everything else is drawn here. Each material has a small ramp of 4 shades,
+// so surfaces read as one hue with depth instead of as noise. Sprites are painted
+// as frame strips: the renderer picks a frame from the world time, so the player
+// runs and the enemies shuffle. A fixed seed keeps every pixel identical across
+// runs, so shots stay comparable.
 
 import * as C from '../config.js';
+import { muster } from './kacheln.js';
 
 // One dark outline hue for every sprite, so a figure separates from any layer.
 const OUTLINE = '#05070f';
@@ -85,6 +88,23 @@ function createBuffer(width, height) {
 // ---------------------------------------------------------------- materials --
 
 /** Paint a tileable grass top: bright tips, mid body, dark base, few dew points. */
+/** Paint one tile from a baked tone field: one ramp shade per index.
+ * The field carries the form, the ramp carries the colour, so a material keeps its
+ * four shades no matter which sheet the form came from. A field that does not fit
+ * its tile throws: a scaled tile would break the pixel grid.
+ */
+function paintField(buf, x0, y0, w, h, ramp, name) {
+  const feld = muster(name);
+  if (feld.w !== w || feld.h !== h) {
+    throw new Error(`pattern ${name} is ${feld.w}x${feld.h}, the tile is ${w}x${h}`);
+  }
+  for (let y = 0; y < h; y += 1) {
+    for (let x = 0; x < w; x += 1) {
+      buf.set(x0 + x, y0 + y, ramp[feld.pixel[y * w + x]]);
+    }
+  }
+}
+
 function paintGrass(buf, x0, y0, w, h, ramp, seed) {
   const random = seeded(seed);
   const noise = Array.from({ length: w }, () => random());
@@ -104,96 +124,6 @@ function paintGrass(buf, x0, y0, w, h, ramp, seed) {
   buf.fill(x0, y0 + h - 2, w, 2, ramp[3]);
   for (let i = 0; i < 8; i += 1) {
     buf.set(x0 + Math.floor(random() * w), y0 + 2 + Math.floor(random() * (h - 5)), ramp[0]);
-  }
-}
-
-/** Paint a tileable dirt body: broad tonal patches, pebbles, a few thin roots.
- * A tone that steps at one fixed height reads as two stacked planks, so the
- * depth comes from patches that cross the middle instead of from a gradient.
- */
-function paintDirt(buf, x0, y0, w, h, ramp, seed) {
-  const random = seeded(seed);
-  // A patch is a stack of spans with a jittered width. Plain rectangles would
-  // read as parquet flooring, so every edge is ragged.
-  const blob = (px, py, pw, ph, tone) => {
-    for (let row = 0; row < ph; row += 1) {
-      const span = Math.max(2, pw - Math.floor(random() * 6));
-      const sx = px + Math.floor((pw - span) / 2) + Math.floor(random() * 3) - 1;
-      const sy = py + row;
-      if (sy >= h) break;
-      for (const shift of [0, -w, w]) buf.fill(x0 + sx + shift, y0 + sy, span, 1, tone);
-    }
-  };
-  buf.fill(x0, y0, w, h, ramp[1]);
-  // Broad patches of the neighbouring tones, laid over the whole height so no
-  // horizontal line survives.
-  for (let i = 0; i < 26; i += 1) {
-    blob(Math.floor(random() * w), Math.floor(random() * h),
-      11 + Math.floor(random() * 18), 5 + Math.floor(random() * 10),
-      random() > 0.55 ? ramp[2] : ramp[0]);
-  }
-  // Extra dark patches below the middle, so the strip still reads as depth.
-  for (let i = 0; i < 9; i += 1) {
-    blob(Math.floor(random() * w), Math.floor(h * 0.55) + Math.floor(random() * h * 0.4),
-      14 + Math.floor(random() * 20), 4 + Math.floor(random() * 7), ramp[2]);
-  }
-  buf.fill(x0, y0, w, 1, ramp[3]);   // dark contact line right under the grass
-  // Pebbles: a lit top and a dark seat so they sit inside the soil.
-  for (let i = 0; i < 7; i += 1) {
-    const size = 2 + Math.floor(random() * 3);
-    const px = Math.floor(random() * w);
-    const py = 3 + Math.floor(random() * (h - 7));
-    for (const shift of [0, -w, w]) {
-      buf.fill(x0 + px + shift, y0 + py, size, size - 1, ramp[2]);
-      buf.fill(x0 + px + shift, y0 + py, size, 1, ramp[0]);
-      buf.fill(x0 + px + shift, y0 + py + size - 1, size, 1, ramp[3]);
-    }
-  }
-  // Roots hang from the grass line only, so the soil below stays calm.
-  for (let i = 0; i < 5; i += 1) {
-    let px = Math.floor(random() * w);
-    for (let s = 0; s < 2 + Math.floor(random() * 4); s += 1) {
-      buf.set(x0 + (px % w), y0 + 1 + s, ramp[3]);
-      px += random() > 0.5 ? 1 : -1;
-    }
-  }
-}
-
-/** Paint the rock footing under the soil: irregular cobbles, lit back, dark seat.
- * The band below the grass would otherwise read as one flat empty strip. The
- * courses are not a brick grid: widths and row heights vary, and the tone stays
- * below the platform stone, so the ground does not compete with the city.
- */
-function paintRockLayer(buf, x0, y0, w, h, soil, stone, seed) {
-  const random = seeded(seed);
-  buf.fill(x0, y0, w, h, stone[3]);
-  buf.fill(x0, y0, w, 1, soil[3]);   // dark contact line where the soil sits
-  let y = 1;
-  while (y < h - 3) {
-    const rowH = 5 + Math.floor(random() * 3);   // courses differ in height
-    let bx = -Math.floor(random() * 9);
-    while (bx < w) {
-      const cw = 8 + Math.floor(random() * 8);
-      // A third of the stones sits one pixel lower, so no two courses align.
-      const ch = Math.min(rowH - (random() > 0.66 ? 1 : 0), h - 1 - y);
-      const tone = stone[1 + (random() > 0.62 ? 1 : 0)];
-      // Drawn twice: a cobble that crosses the right edge continues on the left,
-      // so the courses close seamlessly where the tile repeats.
-      for (const cx of [x0 + bx, x0 + bx - w]) {
-        buf.fill(cx, y0 + y, cw, ch, tone);           // the body fills the row
-        // Only some stones catch the light, and not across their whole back:
-        // a lit line on every stone is what turns a wall into a brick grid.
-        if (random() > 0.45) {
-          buf.fill(cx, y0 + y, Math.max(2, cw - Math.floor(random() * 4)), 1, stone[0]);
-        }
-        buf.fill(cx + cw - 1, y0 + y, 1, ch, stone[2]);   // shaded nose
-        if (random() > 0.72) {
-          buf.set(cx + Math.floor(random() * cw), y0 + y + Math.floor(random() * ch), stone[3]);
-        }
-      }
-      bx += cw + 1;                                     // one pixel of mortar
-    }
-    y += rowH + 1;
   }
 }
 
@@ -710,6 +640,13 @@ function paintAtlas() {
 
   /** Take a cell for one tile and paint it inside its own bounds. */
   function put(name, w, h, paint) {
+    // TILE in config.js is the source of the box, and the tile-fit test compares it
+    // against the surfaces. A painter that asks for another box would break the
+    // fit, so it throws here instead of quietly drawing a different size.
+    const box = C.TILE[name];
+    if (box && (box[0] !== w || box[1] !== h)) {
+      throw new Error(`tile ${name} asks for ${w}x${h}, config says ${box[0]}x${box[1]}`);
+    }
     const rect = layout.take(name, w, h);
     rects[name] = rect;
     buf.setClip(rect);
@@ -719,15 +656,26 @@ function paintAtlas() {
   }
 
   // Materials: grass and dirt for the ground, stone and its cap for platforms.
-  put('grass', 96, 12, (b, x, y, w, h) => paintGrass(b, x, y, w, h, RAMPS.grass.shades, 11));
-  put('tufts', 96, 6, (b, x, y, w, h) => paintTufts(b, x, y, w, h, RAMPS.grass.shades, 17));
-  put('dirt', 192, 48, (b, x, y, w, h) => paintDirt(b, x, y, w, h, RAMPS.dirt.shades, 23));
-  put('rock', 192, 27, (b, x, y, w, h) => paintRockLayer(b, x, y, w, h, RAMPS.dirt.shades,
-    RAMPS.footing.shades, 29));
+  // Every box below equals the surface it fills: the ground bands, the cap band,
+  // the platform body row, and LEVEL_WIDTH (3200) divided by the tile width. A
+  // tile that does not divide its surface is scaled, and scaling breaks the pixel
+  // grid, so the numbers here and in config.js are one system.
+  // Ground takes its tone field from kacheln.js: one shade of the material's ramp
+  // per index. Everything else is drawn here, because the same sheets lost their
+  // structure at these sizes - see the note in ../design-guidelines/game2.md on
+  // DG-P-10: at 32 x 16 the masonry sheet became fine noise, and the grass band
+  // became speckle. Blades and courses are drawn, soil and footing are baked.
+  put('grass', 80, 12, (b, x, y, w, h) => paintGrass(b, x, y, w, h, RAMPS.grass.shades, 11));
+  put('tufts', 80, 6, (b, x, y, w, h) => paintTufts(b, x, y, w, h, RAMPS.grass.shades, 17));
+  put('dirt', 160, 21, (b, x, y, w, h) => {
+    paintField(b, x, y, w, h, RAMPS.dirt.shades, 'dirt');
+    b.fill(x, y, w, 1, RAMPS.dirt.shades[3]);       // dark contact line under grass
+  });
+  put('rock', 160, 27, (b, x, y, w, h) => paintField(b, x, y, w, h, RAMPS.footing.shades, 'rock'));
   put('stone', 32, 16, (b, x, y, w, h) => paintStone(b, x, y, w, h, RAMPS.stone.shades, 37));
-  put('stoneCap', 32, 4, (b, x, y, w, h) => paintCap(b, x, y, w, h,
+  put('stoneCap', 32, 5, (b, x, y, w, h) => paintCap(b, x, y, w, h,
     rgb(P.stoneCapLight), rgb(P.stoneCapMid), rgb(P.stoneCapDark)));
-  put('grassCap', 16, 4, (b, x, y, w, h) => paintCap(b, x, y, w, h,
+  put('grassCap', 16, 5, (b, x, y, w, h) => paintCap(b, x, y, w, h,
     rgb(P.grassCapLight), rgb(P.grassCapMid), rgb(P.grassCapDark)));
 
   // Facades: two tiles per parallax layer, tileable in both directions.
@@ -770,9 +718,11 @@ function paintAtlas() {
   // how many lights are on, and in where the sheen band falls, so two glass
   // towers next to each other never show the same front.
   const glassFronts = [
+    // All three are 16 x 32: a pane grid only closes on itself when the bay
+    // divides the tile, and a building is 16 px wide by its own grid.
     ['glassMidA', 16, 32, 83, 0.025, 4, 0.62],
-    ['glassMidB', 24, 32, 89, 0.02, 8, 1.15],
-    ['glassMidC', 20, 40, 97, 0.03, 5, 0.3],
+    ['glassMidB', 16, 32, 89, 0.02, 8, 1.15],
+    ['glassMidC', 16, 32, 97, 0.03, 4, 0.3],
   ];
   for (const [name, tw, th, seed, lit, bay, phase] of glassFronts) {
     // The dim window palette: a curtain wall reflects the sky, so its own lights
@@ -789,8 +739,10 @@ function paintAtlas() {
   put('propVent', 12, 12, (b, x, y, w, h) => paintProp(b, x, y, w, h, steel, shine, 'vent'));
 
   // The moon: a shaded sphere with maria and craters, alpha outside the disc.
-  put('moon', 64, 64, (b, x, y, w) => paintMoon(b, x, y, w, RAMPS.moon, 71));
-  put('shadow', 24, 8, (b, x, y, w, h) => paintShadow(b, x, y, w, h, rgb(P.spriteOutline)));
+  // The moon tile is drawn at MOON_R * 2 = 88 px and the shadow at its own width,
+  // so neither is scaled. Both sizes match the numbers in config.js and renderer.js.
+  put('moon', 88, 88, (b, x, y, w) => paintMoon(b, x, y, w, RAMPS.moon, 71));
+  put('shadow', 32, 8, (b, x, y, w, h) => paintShadow(b, x, y, w, h, rgb(P.spriteOutline)));
   put('spark', 8, 8, (b, x, y, w) => {
     const c = rgb(P.sparkLight);
     for (let i = 0; i < w; i += 1) {

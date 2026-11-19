@@ -90,9 +90,10 @@ function buildLayer(seed, factor, walls, props, span, minH, maxH, gapMin, gapMax
   let lastWall = '';
   let lastGlass = '';
   while (x < span + 260) {
-    const width = 30 + Math.round(random() * 92);
-    // Heights land on an 8 px step, so a wall tile never stretches.
-    const height = Math.round((minH + random() * (maxH - minH)) / 8) * 8;
+    // Width and height land on the wall tile's own grid (16 wide, 32 tall), so a
+    // façade tile is never stretched on any building.
+    const width = 32 + Math.round(random() * 6) * 16;    // 32 .. 128
+    const height = Math.round((minH + random() * (maxH - minH)) / 32) * 32;
     const shape = building(random, x, width, height, { props });
     // The two lists need their own memory: a glass front has to differ from the
     // previous *glass* tower, and a bricked wall from the previous bricked wall.
@@ -117,13 +118,13 @@ export function buildCity(seed, levelWidth) {
   const span = levelWidth + C.VIEW_W;
   const props = ['propAntenna', 'propTank', 'propVent'];
   return [
-    buildLayer(seed, C.PARALLAX.far, C.CITY_WALLS.far, props, span, 168, 352, 14, 40),
+    buildLayer(seed, C.PARALLAX.far, C.CITY_WALLS.far, props, span, 160, 352, 14, 40),
     // Nearly half of the tall mid blocks wears a glass front, drawn per block, so
     // the skyline never shows the same front twice in a row.
-    buildLayer(seed + 101, C.PARALLAX.mid, C.CITY_WALLS.mid, props, span, 112, 288, 18, 52,
+    buildLayer(seed + 101, C.PARALLAX.mid, C.CITY_WALLS.mid, props, span, 128, 288, 18, 52,
       { glass: C.GLASS_TILES, glassChance: C.GLASS_CHANCE, glassMinH: C.GLASS_MIN_H }),
     // The near layer is a row of dark rooftops: narrow, tall, far apart, so the sky
     // shows between them and the mass never fuses into one wall.
-    buildLayer(seed + 202, C.PARALLAX.near, C.CITY_WALLS.near, [], span, 96, 264, 64, 168),
+    buildLayer(seed + 202, C.PARALLAX.near, C.CITY_WALLS.near, [], span, 96, 256, 64, 168),
   ];
 }

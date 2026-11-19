@@ -39,6 +39,7 @@ Git. Exit is 0 when every case passed, 1 with the failed names.
 | `city-windows` | the far layer holds the most lit windows, the near layer the fewest |
 | `city-glass` | a few mid-layer towers wear a glass front: random, tall, all three tiles, never the same one twice in a row |
 | `city-tints` | each layer shows all four of its wall tiles, none covers half the layer, none sits twice in a row |
+| `tile-fit` | every surface takes a whole number of its tile: ground bands, level width, moon disc, platform bodies, every building |
 | `moon-disc` | the moon measures about 88 px wide and its box corner is sky |
 | `hero-frames` | the hero sprite shows different frames while the player runs |
 | `hero-head` | the helmet cap is identical in all six run frames, so no atlas cell overlaps the head |

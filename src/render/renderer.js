@@ -221,7 +221,9 @@ export function createRenderer(canvas) {
     const tile = atlas.tiles[frameName];
     const x = Math.round(box.x - cameraX);
     const shadow = atlas.tiles.shadow;
-    const wide = Math.round(box.w * 1.2);
+    // The shadow is drawn at its own tile width, so it is never scaled: the tile
+    // is already a little wider than the 26 px box it sits under.
+    const wide = shadow.w;
     rect(LAYER.shadow, shadow, x - Math.round((wide - box.w) / 2), box.y + box.h - 3,
       wide, shadow.h, 1, 1);
     const drawTile = box.facingLeft ? mirrored(tile) : tile;

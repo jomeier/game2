@@ -332,9 +332,9 @@ no image file ships with the game and no build step exists. The rules:
 |---|---|
 | One ramp per material | Four shades of one hue. A pixel picks a shade by index, never a mixed color. |
 | Named materials | `grass`, `tufts`, `dirt` and `rock` for the ground, `stone` plus `stoneCap` for a platform, `farWall`, `midWall`, `nearWall` and `glassMid` for the city, `moon`, `shadow`, `bomb`, two hearts, three roof props. |
-| Tileable tiles | The grass, dirt, stone, and façade tiles repeat on whole pixel counts. Building heights land on an 8 px step, so a tile never stretches. |
+| Tileable tiles | Ground, stone and façade tiles repeat on whole pixel counts. `TILE` in `config.js` holds every tile box, and every surface takes a whole number of its tile: a building is 16 px wide by 32 px tall, a platform body is one 16 px row and a whole number of 32 px columns, so no tile is ever scaled. The `tile-fit` case checks all of it. |
+| Baked tone fields | The soil and the rock tile paint their form from a two-bit index table in `render/kacheln.js`; the shade still comes from the material's ramp. A field must match its tile box exactly or the atlas build throws. |
 | Ground bands | The ground strip is three bands whose heights add up to its depth: `GRASS_BAND`, `SOIL_BAND`, `ROCK_BAND`. Grass blades are a separate tile drawn one tile above the standable line. |
-| Wide ground tiles | A ground tile is at least 96 px wide, the soil and rock tiles 192 px. |
 | One clip per cell | A paint job may only write inside its own atlas cell. A brush that reaches past the edge is dropped. |
 | Half-texel inset | The uv rect of a tile is inset by half a texel on all four sides, so a neighbour cannot bleed in. |
 | Sprite frame strips | The hero has two idle frames, six run frames, and one frame each for a jump, a fall, and a hurt. An enemy has four shuffle frames per direction. The renderer picks the frame from `world.time` and the walk distance. |
@@ -364,7 +364,13 @@ stands rejected: the first soil tile was 16 px wide, so its patches repeated
 sixty times across the level and the ground read as woven cloth instead of earth.
 A stepped gradient and rectangular tone patches stand rejected for the same
 reason: both drew one line across the full width and the soil read as two stacked
-planks. A DOM control hint stands rejected, see `DG-P-13`.
+planks. Equal shares for the four shades stand rejected too: a first bake split the
+sheet into four equal quarters and every material turned into TV noise, while one
+tone dominates a real surface - the fields in `kacheln.js` sit at
+20 / 40 / 25 / 15 percent. Baking every material stands rejected on measurement:
+the same sheet taken at the 32 x 16 box of a platform body lost its block structure
+and became fine grain, and the grass band became speckle, so stone, grass and
+blades stay drawn. A DOM control hint stands rejected, see `DG-P-13`.
 
 ## DG-P-11: Opaque parallax silhouettes
 

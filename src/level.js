@@ -11,9 +11,11 @@ export function buildSpec(width) {
   let gap = 150;
   let index = 0;
   while (x + 200 < width - 60) {
-    const widthOf = 180 + ((index % 3) + 1) * 45;
+    // Width is a whole number of the 32 px stone tile and the height is the cap
+    // band plus one whole tile row, so the platform draws without stretching.
+    const widthOf = 224 + (index % 3) * 32;
     const top = 300 + (index % 2) * 60 + (index % 3) * 25;
-    platforms.push({ x, y: top, w: widthOf, h: 22 });
+    platforms.push({ x, y: top, w: widthOf, h: C.CAP_BAND + 16 });
     gap = Math.max(gap * C.PLATFORM_GAP_STEP, C.PLATFORM_GAP_MIN);
     x += widthOf + Math.round(gap + (index % 2) * 30);
     index += 1;

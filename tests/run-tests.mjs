@@ -12,6 +12,7 @@ import puppeteer from 'puppeteer-core';
 import { decodePngFile, pixel } from './png-decode.mjs';
 import * as C from '../src/config.js';
 import { buildCity } from '../src/render/background.js';
+import { buildSpec } from '../src/level.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SHOTS = path.join(ROOT, 'shots');
@@ -126,21 +127,27 @@ function countNear(image, x0, y0, w, h, color, tolerance = 30) {
  * A raw warm count only says how much wall a band shows; the spec compares the
  * layers, so the case counts lit windows per wall area instead. */
 function windowDensity(image, y0, y1, ramps) {
+  const shades = ramps.map(hexToRgb);
+  const isWall = (p) => shades.some(([wr, wg, wb]) => Math.abs(p[0] - wr) + Math.abs(p[1] - wg)
+    + Math.abs(p[2] - wb) < 26);
   let wall = 0;
   let lit = 0;
   for (let y = y0; y < y1; y += 1) {
-    for (let x = 0; x < 960; x += 1) {
-      const [r, g, b] = pixel(image, x, y);
-      if (r > 150 && g > 110 && b < 150) {
-        lit += 1;
+    for (let x = 3; x < 957; x += 1) {
+      const p = pixel(image, x, y);
+      if (isWall(p)) {
         wall += 1;
         continue;
       }
-      const isWall = ramps.some((hex) => {
-        const [wr, wg, wb] = hexToRgb(hex);
-        return Math.abs(r - wr) + Math.abs(g - wg) + Math.abs(b - wb) < 26;
-      });
-      if (isWall) wall += 1;
+      // A warm pane only counts for the layer whose wall sits beside it. Without
+      // that test the near band also collects the lit windows of the layers behind
+      // it, which are visible between the near rooftops, and the order is gone.
+      if (p[0] > 150 && p[1] > 110 && p[2] < 150
+        && [pixel(image, x - 3, y), pixel(image, x + 3, y), pixel(image, x, y + 3)]
+          .some(isWall)) {
+        lit += 1;
+        wall += 1;
+      }
     }
   }
   return { wall, lit, density: wall ? lit / wall : 0 };
@@ -384,6 +391,14 @@ async function caseMaterials(page) {
   if (grassCount < 400) throw new Error(`only ${grassCount} grass pixels on the ground strip`);
   if (dirtCount < 400) throw new Error(`only ${dirtCount} dirt pixels under the grass strip`);
   if (rockCount < 400) throw new Error(`only ${rockCount} rock pixels in the footing band`);
+  // The soil and the footing carry a baked tone field, so a band must show more
+  // than one shade of its ramp. A flat fill means the field never arrived.
+  const stufen = (palette, rect) => palette.reduce((n, c) => n
+    + (countNear(image, ...rect, c, 40) > 40 ? 1 : 0), 0);
+  const dirtStufen = stufen(dirt, [120, soilTop, 700, cfg.bands.soil - 1]);
+  const rockStufen = stufen(footing, [120, rockTop, 700, cfg.bands.rock]);
+  if (dirtStufen < 3) throw new Error(`the soil band shows only ${dirtStufen} of 4 soil shades`);
+  if (rockStufen < 3) throw new Error(`the footing band shows only ${rockStufen} of 4 rock shades`);
   const platform = st.platforms.find((p) => p.x > 60 && p.x + p.w < 900);
   if (!platform) throw new Error('no platform on screen to read');
   const left = platform.x - cameraOf(st.player.x);
@@ -401,9 +416,14 @@ async function caseCityWindows(page) {
   await sleep(600);
   const image = await probeShot(page, 'probe-windows.png');
   const cfg = await probe(page, () => window.__gameConfig.COLOR);
-  const far = windowDensity(image, 250, 320, cfg.wallFar);
-  const mid = windowDensity(image, 320, 400, cfg.wallMid);
-  const near = windowDensity(image, 400, 478, cfg.wallNear);
+  // All three tints of a layer belong to that layer: a band holds base, warm and
+  // cool towers in equal parts.
+  const far = windowDensity(image, 250, 320,
+    [...cfg.wallFar, ...cfg.wallFarWarm, ...cfg.wallFarCool]);
+  const mid = windowDensity(image, 320, 400,
+    [...cfg.wallMid, ...cfg.wallMidWarm, ...cfg.wallMidCool]);
+  const near = windowDensity(image, 400, 478,
+    [...cfg.wallNear, ...cfg.wallNearWarm, ...cfg.wallNearCool]);
   if (far.lit < 30) throw new Error(`only ${far.lit} lit windows in the far band`);
   if (!(far.density > mid.density && mid.density >= near.density)) {
     throw new Error(`lit share does not fall to the front: ${(far.density * 100).toFixed(1)}% / `
@@ -443,6 +463,43 @@ async function caseCityGlass() {
   const places = glass.map((s) => mid.shapes.indexOf(s));
   const steps = places.slice(1).map((v, i) => v - places[i]);
   if (new Set(steps).size < 2) throw new Error(`glass fronts sit on a fixed step of ${steps[0]}`);
+}
+
+/** Every surface takes a whole number of its tile, so no tile is ever scaled.
+ * A scaled tile breaks the pixel grid, and the atlas is drawn for nearest
+ * filtering: these numbers are one system with config.js.
+ */
+async function caseTileFit() {
+  const T = C.TILE;
+  const Schritt = (was, px, kachel) => {
+    if (px % kachel !== 0) {
+      throw new Error(`${was}: ${px} px durch eine ${kachel} px kachel ist ${(px / kachel).toFixed(2)}`);
+    }
+  };
+  Schritt('the grass band', C.GRASS_BAND, T.grass[1]);
+  Schritt('the soil band', C.SOIL_BAND, T.dirt[1]);
+  Schritt('the rock band', C.ROCK_BAND, T.rock[1]);
+  Schritt('the cap band on stone', C.CAP_BAND, T.stoneCap[1]);
+  Schritt('the cap band on grass', C.CAP_BAND, T.grassCap[1]);
+  Schritt('the ground width, soil', C.LEVEL_WIDTH, T.dirt[0]);
+  Schritt('the ground width, rock', C.LEVEL_WIDTH, T.rock[0]);
+  Schritt('the ground width, grass', C.LEVEL_WIDTH, T.grass[0]);
+  Schritt('the ground width, tufts', C.LEVEL_WIDTH, T.tufts[0]);
+  Schritt('the moon disc, wide', C.MOON_R * 2, T.moon[0]);
+  Schritt('the moon disc, high', C.MOON_R * 2, T.moon[1]);
+
+  for (const platform of buildSpec(C.LEVEL_WIDTH).platforms) {
+    Schritt(`a platform ${platform.w} px wide`, platform.w, T.stone[0]);
+    Schritt('a platform body below the cap', platform.h - C.CAP_BAND, T.stone[1]);
+  }
+
+  for (const layer of buildCity(C.CITY_SEED, C.LEVEL_WIDTH)) {
+    for (const shape of layer.shapes) {
+      const box = T[shape.wall];
+      Schritt(`the ${shape.wall} front on a ${shape.w} px building`, shape.w, box[0]);
+      Schritt(`the ${shape.wall} front on a ${shape.h} px tower`, shape.h, box[1]);
+    }
+  }
 }
 
 /** Each layer wears all four of its wall tiles, no tile twice in a row. */
@@ -746,6 +803,7 @@ async function main() {
     ['city-windows', () => caseCityWindows(page)],
     ['city-glass', () => caseCityGlass()],
     ['city-tints', () => caseCityTints()],
+    ['tile-fit', () => caseTileFit()],
     ['moon-disc', () => caseMoonDisc(page)],
     ['hero-frames', () => caseHeroFrames(page)],
     ['hero-head', () => caseHeroHead(page)],

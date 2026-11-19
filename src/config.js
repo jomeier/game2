@@ -57,6 +57,8 @@ export const PLATFORM_GAP_MIN = 90;
 
 // Band heights inside the 60 px ground strip (VIEW_H - GROUND_Y): grass on top,
 // soil in the middle, a rock footing at the bottom. The three add up to 60.
+// Each band height equals the height of the tile that fills it, so a tile never
+// stretches: see the size table in render/README.md.
 export const GRASS_BAND = 12;
 export const SOIL_BAND = 21;
 export const ROCK_BAND = 27;
@@ -88,6 +90,24 @@ export const CITY_WALLS = {
   mid: ['midWallA', 'midWallB', 'midWallC', 'midWallD'],
   near: ['nearWallA', 'nearWallB', 'nearWallC', 'nearWallD'],
 };
+
+// The tile boxes of the atlas, one source for render/textures.js and for the
+// tile-fit test. A box must divide the surface it fills: the ground bands, the cap
+// band, a platform body row, LEVEL_WIDTH, a building's width and height, and the
+// moon disc. Where it does not, the tile is scaled and the pixel grid is gone.
+export const TILE = {
+  grass: [80, 12], tufts: [80, 6], dirt: [160, 21], rock: [160, 27],
+  stone: [32, 16], stoneCap: [32, 5], grassCap: [16, 5],
+  moon: [88, 88], shadow: [32, 8],
+  hintMove: [156, 24], jet: [52, 14], bomb: [12, 14], spark: [8, 8],
+  heartFull: [16, 16], heartSpent: [16, 16],
+  propAntenna: [12, 15], propTank: [14, 13], propVent: [12, 12],
+};
+// City walls and curtain walls all share one box, so any building width that is a
+// whole number of 16 and any height that is a whole number of 32 fits exactly.
+for (const wall of [...CITY_WALLS.far, ...CITY_WALLS.mid, ...CITY_WALLS.near, ...GLASS_TILES]) {
+  TILE[wall] = [16, 32];
+}
 
 // The DG-P-09 night palette.
 export const COLOR = {

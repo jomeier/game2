@@ -9,6 +9,7 @@ atlas, the sky, and the city. It reads world state and never changes it. See rul
 | `renderer.js` | The context, the draw queue, the camera shift, the layer order, the sprite frame choice. |
 | `shaders.js` | The three programs: `quad`, `glow`, `atlas`. |
 | `textures.js` | The atlas: a cell allocator, material tiles, roof props, the moon, sprite frame strips, a 3x5 pixel font. |
+| `kacheln.js` | Two baked tone fields (soil, rock footing) as two bits per pixel: form only, the shade comes from the ramp. |
 | `background.js` | Stars, the horizon haze, the moon arc, the three city layers and their roof props. |
 
 ## Commands
@@ -81,9 +82,10 @@ distance for an enemy, so no module keeps animation state.
 - One ramp of four shades per material. The ramps are built from `COLOR` in
   [../config.js](../config.js).
 - The ground is three bands whose heights add up to the strip depth: `GRASS_BAND`,
-  `SOIL_BAND` and `ROCK_BAND`. Its tiles are wide on purpose (grass 96 px, soil and
-  rock 192 px): a 16 px tile repeats sixty times across the world and the eye finds
-  the grid, which is what made the soil read as woven cloth.
+  `SOIL_BAND` and `ROCK_BAND`. Its tiles are wide on purpose (grass 80 px, soil and
+  rock 160 px, all three divisors of `LEVEL_WIDTH`): a 16 px tile repeats two
+  hundred times across the world and the eye finds the grid, which is what made the
+  soil read as woven cloth.
 - A band must not step to a new shade at one fixed height, and its patches must not
   be plain rectangles: both read as stacked planks, so the soil is painted as blobs
   with a jittered span per row.
@@ -101,7 +103,20 @@ distance for an enemy, so no module keeps animation state.
 - Each paint job carries a clip box and may only write inside its own atlas cell.
   Before the allocator existed, the stone mortar bled into the dirt cell and made
   the ground read blue.
-- Building heights land on an 8 px step, so a façade tile never stretches. The
+- Every tile box lives in `TILE` in [../config.js](../config.js), and every surface
+  takes a whole number of its tile: the ground bands equal their tile heights,
+  `LEVEL_WIDTH` divides by each ground tile width, a building is a whole number of
+  16 px columns and 32 px rows, a platform body is one 16 px row. A tile that does
+  not fit is scaled, and scaling kills the pixel grid, so `paintAtlas` throws on a
+  painter that asks for another box and the `tile-fit` case checks the surfaces.
+- Soil and rock footing paint from a baked tone field in `kacheln.js`: two bits per
+  pixel, form only, four shades of the material's ramp. The fields came from two
+  sheets in `docs/references/`, cropped at the exact box, mirrored at the edges so
+  the tile closes, and split at 20 / 40 / 25 / 15 percent - equal quarters turned
+  every material into noise. Stone, grass and blades stay drawn: the same sheets
+  lost their structure at a 32 x 16 box.
+- Building heights land on a 32 px step and widths on 16 px, the façade tile's own
+  grid, so a façade tile never stretches. The
 façade tiles carry no full width floor lines: those made the three layers read as
 one wallpaper pattern.
 - A mirrored sprite swaps the uv x pair; see `mirrored()` in `renderer.js`.
