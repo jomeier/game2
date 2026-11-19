@@ -373,10 +373,14 @@ The draw order runs sky and stars, moon, then the city layers back to front.
 Buildings cover the moon wherever they overlap it; the moon shows only in the
 gaps between silhouettes. Depth comes from the value steps, never from
 transparency. The front layer uses the darkest values, the back layers lighter
-and duller ones. A tall mid-layer tower wears a glass curtain wall instead of a
-bricked façade with `GLASS_CHANCE`, and only above `GLASS_MIN_H`; the tile is
-drawn so that two glass towers never wear the same front in a row. The glass ramp
-stays under the brightest shade of the layer behind it, so the value order holds.
+and duller ones. Each layer holds four wall tiles: one tint on two window grids
+plus a warm and a cool relative of that tint. A relative keeps the four value
+steps of its layer and only turns the hue, so the layer stays one distance while
+the skyline stops repeating. A tall mid-layer tower wears a glass curtain wall
+instead of a bricked façade with `GLASS_CHANCE`, and only above `GLASS_MIN_H`;
+the tile is drawn so that two glass towers never wear the same front in a row.
+The glass ramp stays under the brightest shade of the layer behind it, so the
+value order holds.
 
 **Reason.** The spec demands opaque layers and forbids the moon shining through
 buildings. Alpha-blended buildings leak the moon and break the hard silhouettes

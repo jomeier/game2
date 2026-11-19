@@ -51,8 +51,10 @@ The game is a 2D platformer. It runs in the browser. It uses JavaScript and WebG
    footing. Grass blades rise above the line the player stands on. A floating
    platform shows stone with visible block joints and a light top edge.
 7. The three city layers show building façades with window rows. Windows are lit
-   in the far layer most of all and in the near layer least of all. A few of the
-   tall mid-layer towers wear a glass curtain wall instead: its panes reflect the
+   in the far layer most of all and in the near layer least of all. Inside one
+   layer the towers differ in wall tint and in window grid, but the difference
+   stays slight: the layer still reads as one distance. A few of the tall
+   mid-layer towers wear a glass curtain wall instead: its panes reflect the
    sky, and the choice is random, so the skyline never looks ruled.
 8. The moon is a disc with dark seas and craters. It has a round edge, not a
    square one.

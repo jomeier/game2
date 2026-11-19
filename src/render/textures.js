@@ -254,10 +254,13 @@ function paintCap(buf, x0, y0, w, h, light, mid, dark) {
  * `bay` sets the window pitch and `shift` moves the whole grid, so the A and the B
  * variant of a layer do not line up. No full width floor lines: those turned the
  * three layers into one wallpaper. */
-function paintFacade(buf, x0, y0, w, h, wall, glass, seed, litChance, bay, shift) {
-  const random = seeded(seed);
-  const windowW = bay - 5;
-  const windowH = 5;
+function paintFacade(buf, x0, y0, w, h, wall, glass, o) {
+  const random = seeded(o.seed);
+  // `pane` is the window width and `bay` the distance between two windows: one
+  // tile can hold few small windows or many, without a window growing out of the
+  // pixel scale of the layer.
+  const windowW = o.pane;
+  const windowH = o.step / 2;
   for (let y = 0; y < h; y += 1) {
     // One vertical value step per third: a tower reads taller with it.
     const third = y < h / 3 ? 1 : y < (2 * h) / 3 ? 2 : 3;
@@ -265,12 +268,17 @@ function paintFacade(buf, x0, y0, w, h, wall, glass, seed, litChance, bay, shift
       buf.set(x0 + x, y0 + y, random() > 0.93 ? wall[third - 1] : wall[third]);
     }
   }
-  for (let fy = 4; fy + windowH + 1 < h; fy += 10) {
-    for (let bx = shift; bx + windowW <= w; bx += bay) {
-      const lit = random() < litChance;
+  // The first row sits where the tile's floor step says it does, so a step that
+  // divides the tile height keeps the rhythm even across the tile seam.
+  for (let fy = o.fy0; fy + windowH + 1 < h; fy += o.step) {
+    for (let bx = o.shift; bx + windowW <= w; bx += o.bay) {
+      const lit = random() < o.lit;
       const wx = x0 + bx;
       const wy = y0 + fy;
-      buf.fill(wx, wy, windowW, windowH, lit ? (random() > 0.72 ? glass[1] : glass[0]) : glass[2]);
+      // `cool` is the share of the lit windows that burn cool white. Tying the
+      // light mix to the wall tint is what makes one tower read as one building.
+      buf.fill(wx, wy, windowW, windowH, lit
+        ? (random() < o.cool ? glass[1] : glass[0]) : glass[2]);
       if (lit) {
         buf.fill(wx, wy, windowW, 1, glass[1]);
         buf.set(wx + 1, wy + 2, glass[1]);
@@ -618,8 +626,14 @@ const RAMPS = {
   footing: makeRamp(P.rockFooting),
   glassMid: makeRamp(P.glassMid),
   far: makeRamp(P.wallFar),
+  farWarm: makeRamp(P.wallFarWarm),
+  farCool: makeRamp(P.wallFarCool),
   mid: makeRamp(P.wallMid),
+  midWarm: makeRamp(P.wallMidWarm),
+  midCool: makeRamp(P.wallMidCool),
   near: makeRamp(P.wallNear),
+  nearWarm: makeRamp(P.wallNearWarm),
+  nearCool: makeRamp(P.wallNearCool),
   moon: makeRamp(P.moonRamp),
 };
 
@@ -717,17 +731,39 @@ function paintAtlas() {
     rgb(P.grassCapLight), rgb(P.grassCapMid), rgb(P.grassCapDark)));
 
   // Facades: two tiles per parallax layer, tileable in both directions.
+  // Four façade tiles per layer: the base tint twice on two window grids, then
+  // the warm and the cool relative, one with wide windows and one with a denser
+  // floor step. Each tile also carries the light mix that suits its tint, so a
+  // warm tower lights warm and a cool tower lights cool.
   const facades = [
-    ['farWallA', RAMPS.far.shades, 41, 0.3, 8, 1],
-    ['farWallB', RAMPS.far.shades, 47, 0.24, 8, 5],
-    ['midWallA', RAMPS.mid.shades, 53, 0.17, 8, 1],
-    ['midWallB', RAMPS.mid.shades, 59, 0.13, 8, 5],
-    ['nearWallA', RAMPS.near.shades, 67, 0.045, 8, 1, GLASS_NEAR],
-    ['nearWallB', RAMPS.near.shades, 71, 0.03, 8, 5, GLASS_NEAR],
+    ['farWallA', RAMPS.far, { seed: 41, lit: 0.3, bay: 8, pane: 3, shift: 1, step: 10, fy0: 4,
+      cool: 0.35 }],
+    ['farWallB', RAMPS.far, { seed: 47, lit: 0.24, bay: 8, pane: 3, shift: 5, step: 10, fy0: 4,
+      cool: 0.5 }],
+    ['farWallC', RAMPS.farWarm, { seed: 131, lit: 0.27, bay: 12, pane: 5, shift: 2, step: 10,
+      fy0: 4, cool: 0.14 }],
+    ['farWallD', RAMPS.farCool, { seed: 137, lit: 0.21, bay: 8, pane: 3, shift: 3, step: 8,
+      fy0: 0, cool: 0.76 }],
+    ['midWallA', RAMPS.mid, { seed: 53, lit: 0.17, bay: 8, pane: 3, shift: 1, step: 10, fy0: 4,
+      cool: 0.35 }],
+    ['midWallB', RAMPS.mid, { seed: 59, lit: 0.13, bay: 8, pane: 3, shift: 5, step: 10, fy0: 4,
+      cool: 0.5 }],
+    ['midWallC', RAMPS.midWarm, { seed: 139, lit: 0.15, bay: 12, pane: 5, shift: 2, step: 10,
+      fy0: 4, cool: 0.14 }],
+    ['midWallD', RAMPS.midCool, { seed: 149, lit: 0.12, bay: 8, pane: 3, shift: 3, step: 8,
+      fy0: 0, cool: 0.76 }],
+    ['nearWallA', RAMPS.near, { seed: 67, lit: 0.045, bay: 8, pane: 3, shift: 1, step: 10,
+      fy0: 4, cool: 0.3, glass: GLASS_NEAR }],
+    ['nearWallB', RAMPS.near, { seed: 71, lit: 0.03, bay: 8, pane: 3, shift: 5, step: 10,
+      fy0: 4, cool: 0.45, glass: GLASS_NEAR }],
+    ['nearWallC', RAMPS.nearWarm, { seed: 151, lit: 0.04, bay: 12, pane: 5, shift: 2, step: 10,
+      fy0: 4, cool: 0.12, glass: GLASS_NEAR }],
+    ['nearWallD', RAMPS.nearCool, { seed: 157, lit: 0.025, bay: 8, pane: 3, shift: 3, step: 8,
+      fy0: 0, cool: 0.7, glass: GLASS_NEAR }],
   ];
-  for (const [name, ramp, seed, lit, bay, shift, glass] of facades) {
-    put(name, 16, 32, (b, x, y, w, h) => paintFacade(b, x, y, w, h, ramp, glass || GLASS,
-      seed, lit, bay, shift));
+  for (const [name, ramp, style] of facades) {
+    put(name, 16, 32, (b, x, y, w, h) => paintFacade(b, x, y, w, h, ramp.shades,
+      style.glass || GLASS, style));
   }
 
   // Three curtain-wall fronts for the mid layer. They differ in pane grid, in

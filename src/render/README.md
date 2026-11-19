@@ -62,7 +62,8 @@ pixels at the helmet every other stride.
 |---|---|
 | `grass`, `tufts`, `dirt`, `rock` | the ground: grass band, blades above the standable line, soil, rock footing |
 | `stone`, `stoneCap`, `grassCap` | a platform body, its light top edge, a grass edge |
-| `farWallA/B`, `midWallA/B`, `nearWallA/B` | the city layers; two tiles each so no two neighbours share a window grid |
+| `farWallA/B`, `midWallA/B` | the city layers on the base tint, two window grids each |
+| `farWallC/D`, `midWallC/D`, `nearWallC/D` | the warm and the cool relative of a layer: wide windows on the warm tile, a denser floor step on the cool one |
 | `glassMidA/B/C` | the curtain-wall fronts of the mid layer: three pane grids, three sheen phases |
 | `propAntenna`, `propTank`, `propVent` | roof silhouettes |
 | `moon` | the moon disc: sphere shading, maria, craters, alpha outside the disc |
@@ -91,6 +92,12 @@ distance for an enemy, so no module keeps animation state.
   per-pane noise stays under a third of a shade step. Wider noise turns the front
   into confetti, and lit panes then read as polka dots. Glass exists in the mid
   layer only: the near layer carries silhouette, not detail.
+- A city layer owns three ramps: the base and two relatives that turn the hue a
+  little and keep the four value steps (`wallFarWarm`, `wallMidCool`, and so on).
+  `CITY_WALLS` names the four tiles of a layer, and each tile carries the light
+  mix that suits its tint, so a warm tower lights warm. A window's width
+  (`pane`) and its spacing (`bay`) are set apart, so a tower can hold few small
+  windows without a window growing out of the pixel scale of its layer.
 - Each paint job carries a clip box and may only write inside its own atlas cell.
   Before the allocator existed, the stone mortar bled into the dirt cell and made
   the ground read blue.

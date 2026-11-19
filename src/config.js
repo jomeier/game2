@@ -80,6 +80,15 @@ export const GLASS_TILES = ['glassMidA', 'glassMidB', 'glassMidC'];
 export const GLASS_CHANCE = 0.42;
 export const GLASS_MIN_H = 176;
 
+// The wall tiles of the three layers. Each layer holds four: the base tint on two
+// window grids, plus the warm and the cool relative with a window grid of their
+// own. A layer shows all three tints, so it stays one distance and one haze.
+export const CITY_WALLS = {
+  far: ['farWallA', 'farWallB', 'farWallC', 'farWallD'],
+  mid: ['midWallA', 'midWallB', 'midWallC', 'midWallD'],
+  near: ['nearWallA', 'nearWallB', 'nearWallC', 'nearWallD'],
+};
+
 // The DG-P-09 night palette.
 export const COLOR = {
   skyTop: '#0b1026',
@@ -101,8 +110,15 @@ export const COLOR = {
   windowNearCool: '#6c7a99',
   // Three clear value steps: the far layer is hazed and light, the near layer is
   // almost black, so the city reads as depth without any transparency (DG-P-11).
+  // Each layer owns a trio of ramps: the base and two near relatives. A relative
+  // keeps the four value steps of its layer and only turns the hue a little, so a
+  // skyline of three tints still reads as one layer at one distance.
   wallFar: ['#5a6593', '#48517a', '#38405f', '#2a3149'],
+  wallFarWarm: ['#61668a', '#4f5271', '#3f4156', '#313240'],
+  wallFarCool: ['#556995', '#43557c', '#334461', '#25354b'],
   wallMid: ['#2c3560', '#212a48', '#161d33', '#0f1426'],
+  wallMidWarm: ['#333657', '#282b3f', '#1d1e2a', '#16151d'],
+  wallMidCool: ['#273962', '#1c2e4a', '#112135', '#0a1828'],
   // Four shades for a glass curtain wall: cool sky tones, lightest at the top.
   // A glass tower is the brightest object inside its own layer, but it stays
   // under the brightest shade of the layer behind it, so the value order of
@@ -112,6 +128,8 @@ export const COLOR = {
   // The near layer carries silhouette, not detail: it stays dark and nearly blind
   // so the mid layer keeps the window pattern and the eye has a place to rest.
   wallNear: ['#1c2342', '#141a33', '#0d1226', '#070a17'],
+  wallNearWarm: ['#232439', '#1b1b2a', '#14131d', '#0e0b0e'],
+  wallNearCool: ['#172744', '#0f1e35', '#081628', '#020e19'],
   edgeLightFar: '#6a76a8',
   edgeLightMid: '#3d4878',
   edgeLightNear: '#3f4a7a',

@@ -445,6 +445,34 @@ async function caseCityGlass() {
   if (new Set(steps).size < 2) throw new Error(`glass fronts sit on a fixed step of ${steps[0]}`);
 }
 
+/** Each layer wears all four of its wall tiles, no tile twice in a row. */
+async function caseCityTints() {
+  const layers = buildCity(C.CITY_SEED, C.LEVEL_WIDTH);
+  for (const name of ['far', 'mid', 'near']) {
+    const layer = layers[{ far: 0, mid: 1, near: 2 }[name]];
+    const tiles = C.CITY_WALLS[name];
+    const walls = layer.shapes.filter((s) => tiles.includes(s.wall));
+    const used = new Set(walls.map((s) => s.wall));
+    if (used.size < tiles.length) {
+      throw new Error(`the ${name} layer shows ${used.size} of ${tiles.length} wall tiles`);
+    }
+    // No single tint may swallow the layer, or the variety is only on paper. Half
+    // is the bound: four tiles drawn at random land near a quarter each, and the
+    // no-repeat rule lets one of them double up on a short layer.
+    const counts = new Map();
+    for (const shape of walls) counts.set(shape.wall, (counts.get(shape.wall) ?? 0) + 1);
+    const top = Math.max(...counts.values());
+    if (top / walls.length > 0.5) {
+      throw new Error(`one ${name} wall tile covers ${Math.round((100 * top) / walls.length)}%`);
+    }
+    for (let i = 1; i < layer.shapes.length; i += 1) {
+      if (layer.shapes[i].wall === layer.shapes[i - 1].wall) {
+        throw new Error(`${layer.shapes[i].wall} sits on two buildings in a row (${name})`);
+      }
+    }
+  }
+}
+
 /** The moon is a disc: about 88 px wide, with sky in the corner of its box. */
 async function caseMoonDisc(page) {
   const moon = await measureMoon(page);
@@ -472,7 +500,9 @@ function findHeroLeft(image, cfg) {
     for (let y = 438; y < 480; y += 1) {
       for (let dx = 0; dx < 26; dx += 2) {
         const px = pixel(image, x + dx, y);
-        if (near(px, body) < 70 || near(px, light) < 90) n += 1;
+        // The light tolerance stays tight: the cool city window sits only 61 steps
+        // from the helmet tone and would otherwise be counted as hero pixels.
+        if (near(px, body) < 70 || near(px, light) < 24) n += 1;
       }
     }
     if (n > best.n) best = { x, n };
@@ -481,6 +511,29 @@ function findHeroLeft(image, cfg) {
 }
 
 /** The helmet must look the same in every run frame: no cell bleed at the head. */
+/** Count the light pixels of the helmet near a guessed sprite position.
+ * The guess comes from the state hook and the widest count within a small x range
+ * wins. Hunting the sprite by colour instead once landed one column off, cut the
+ * helmet cap, and read as a helmet that differs between run frames.
+ */
+function helmetCap(image, cfg, guessLeft, top) {
+  const light = hexToRgb(cfg.COLOR.heroLight);
+  const near = (px, c) => Math.abs(px[0] - c[0]) + Math.abs(px[1] - c[1]) + Math.abs(px[2] - c[2]);
+  let best = 0;
+  for (let left = guessLeft - 12; left <= guessLeft + 12; left += 1) {
+    let n = 0;
+    for (let y = top; y < top + 6; y += 1) {
+      // The tight tolerance keeps a lit city window out of the count: the cool
+      // window tone sits only 61 steps from the helmet tone.
+      for (let x = left; x < left + 26; x += 1) {
+        if (near(pixel(image, x, y), light) < 24) n += 1;
+      }
+    }
+    if (n > best) best = n;
+  }
+  return best;
+}
+
 async function caseHeroHead(page) {
   await page.evaluate(() => window.__game.api.newRun());
   await sleep(250);
@@ -495,15 +548,11 @@ async function caseHeroHead(page) {
     const frame = await page.evaluate(() => Math.floor(window.__game.state.time * 12) % 6);
     if (seen.has(frame)) { await sleep(30); continue; }
     seen.add(frame);
-    const hero = findHeroLeft(image, cfg);
-    // The light cap of the helmet: two rows of ten bright pixels in the head band.
-    let cap = 0;
-    for (let y = 440; y < 444; y += 1) {
-      for (let x = 0; x < 26; x += 1) {
-        const px = pixel(image, hero.x + x, y);
-        if (Math.abs(px[0] - 217) + Math.abs(px[1] - 251) + Math.abs(px[2] - 255) < 90) cap += 1;
-      }
-    }
+    const where = await page.evaluate(() => ({ x: window.__game.state.player.x,
+      y: window.__game.state.player.y }));
+    // The light cap of the helmet, plus the glint pixel beside the visor.
+    const cap = helmetCap(image, cfg, Math.round(where.x - cameraOf(where.x)),
+      Math.round(where.y));
     caps.push({ frame, cap });
     await sleep(30);
   }
@@ -696,6 +745,7 @@ async function main() {
     ['materials', () => caseMaterials(page)],
     ['city-windows', () => caseCityWindows(page)],
     ['city-glass', () => caseCityGlass()],
+    ['city-tints', () => caseCityTints()],
     ['moon-disc', () => caseMoonDisc(page)],
     ['hero-frames', () => caseHeroFrames(page)],
     ['hero-head', () => caseHeroHead(page)],
