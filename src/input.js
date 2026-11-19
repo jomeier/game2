@@ -2,10 +2,13 @@
 // Input: browser key events. Output: a small map of held keys.
 // This module knows the key names and nothing about the game.
 
-const LEFT = ['KeyA'];
-const RIGHT = ['KeyD'];
-const JUMP = ['Space', 'KeyW'];
+// The arrows, A/D, and Q/Z, so the game answers to the layout the player has.
+const LEFT = ['ArrowLeft', 'KeyA', 'KeyQ'];
+const RIGHT = ['ArrowRight', 'KeyD'];
+const JUMP = ['Space', 'KeyW', 'ArrowUp', 'KeyZ'];
 const RESTART = ['KeyR'];
+// The page must not scroll under the player's fingers.
+const HANDLED = new Set([...LEFT, ...RIGHT, ...JUMP, ...RESTART]);
 
 /** Return an object with the held-key flags and a restart latch. */
 export function createInput(target) {
@@ -27,9 +30,10 @@ export function createInput(target) {
   }
 
   target.addEventListener('keydown', (event) => {
+    if (!HANDLED.has(event.code)) return;
+    event.preventDefault();
     if (event.repeat) return;
     apply(event.code, true);
-    if (JUMP.includes(event.code) || RESTART.includes(event.code)) event.preventDefault();
   });
   target.addEventListener('keyup', (event) => apply(event.code, false));
   // A focus loss must not leave a key held.

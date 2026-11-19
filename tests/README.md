@@ -34,6 +34,12 @@ Git. Exit is 0 when every case passed, 1 with the failed names.
 | Case | What it checks |
 |---|---|
 | `initial` | the hook answers, the run starts with 3 lives |
+| `keys` | ArrowRight, ArrowLeft, and Q move; ArrowUp jumps |
+| `materials` | grass over dirt on the ground, stone body and light cap on a platform |
+| `city-windows` | the far layer holds the most lit windows, the near layer the fewest |
+| `moon-disc` | the moon measures about 88 px wide and its box corner is sky |
+| `hero-frames` | the hero sprite shows different frames while the player runs |
+| `hint` | the control hint shows during the first seconds of a level |
 | `move` | D moves right, A moves left |
 | `jump` | W lifts the player and gravity brings them back |
 | `moon` | one full pass: u rises past the top center, then wraps to 0 |
@@ -44,6 +50,9 @@ Git. Exit is 0 when every case passed, 1 with the failed names.
 | `level` | gaps are at least 90 px and widths vary along the level |
 | `lives` | three deaths show GAME OVER, R restarts the run with 3 lives |
 | `opaque-city` | sky, city, and platform pixels are opaque; the city holds lit windows |
+
+Run one case by hand while you work on the picture: the script prints one line per
+case and writes `shots/probe-*.png` for the pixel cases.
 
 ## Reading the hook
 
@@ -64,3 +73,7 @@ level (`reset`), start a full new run (`newRun`), place the player
 
 A failed case also writes `shots/fail-<case>.png`. Read that image before you
 change the game: it shows what the player saw at the failed moment.
+
+A predicate for `page.waitForFunction` as a plain string of an arrow function is
+always true, because the page evaluates the function object. Use `waitUntil(page,
+'s => ...', ms)`; it evals the source and calls it with the state.

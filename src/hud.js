@@ -14,7 +14,7 @@ export function heartQuads(world) {
       y: C.HEART_Y,
       w: C.HEART_SIZE,
       h: C.HEART_SIZE,
-      color: full ? C.COLOR.enemy : C.HUD_SPENT,
+      color: full ? C.COLOR.heartFull : C.COLOR.heartSpent,
       full,
     });
   }

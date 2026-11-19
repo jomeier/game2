@@ -20,7 +20,8 @@ const BASE_URL = `http://localhost:${PORT}/`;
 const HELP = `Usage: node tests/run-tests.mjs [--help]
 
 Starts python3 -m http.server on port ${PORT}, serves src/, drives headless Chrome.
-Cases: initial, move, jump, moon, jet-bomb, stomp, blast, level, lives, opaque-city.
+Cases: initial, keys, materials, city-windows, moon-disc, hero-frames, hint, move,
+jump, moon, jet-bomb, stomp, side-touch, blast, level, lives, opaque-city.
 Screenshots: shots/01-initial.png, 02-jump.png, 03-jet-bomb.png, 04-gameover.png,
 04-moon-top.png. A failed case also saves shots/fail-<case>.png.
 `;
@@ -31,6 +32,24 @@ if (process.argv.includes('--help')) {
 }
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Return [r, g, b] for a #rrggbb string. */
+function hexToRgb(hex) {
+  const value = parseInt(hex.slice(1), 16);
+  return [(value >> 16) & 255, (value >> 8) & 255, value & 255];
+}
+
+/** Read a color list from the page config inside one evaluate call. */
+function readPalette() {
+  return {
+    grass: [window.__gameConfig.COLOR.grassLight, window.__gameConfig.COLOR.grass,
+      window.__gameConfig.COLOR.grassDark, window.__gameConfig.COLOR.grassDeep],
+    dirt: [window.__gameConfig.COLOR.dirtLight, window.__gameConfig.COLOR.dirt,
+      window.__gameConfig.COLOR.dirtDark, window.__gameConfig.COLOR.dirtDeep],
+    stone: [window.__gameConfig.COLOR.stoneLight, window.__gameConfig.COLOR.stone,
+      window.__gameConfig.COLOR.stoneDark, window.__gameConfig.COLOR.stoneDeep],
+  };
+}
 const state = (page) => page.evaluate(() => window.__game.state);
 
 /** Start the static server for src/ and return its stop function. */
@@ -67,6 +86,95 @@ async function waitUntil(page, predicateSource, timeoutMs) {
     { timeout: timeoutMs, polling: 80 },
     predicateSource,
   );
+}
+
+/** Return the camera x the game uses for a player x (DG-P-04). */
+function cameraOf(playerX) {
+  return Math.max(0, Math.min(Math.round(playerX) + 13 - 480, 3200 - 960));
+}
+
+/** Save a probe screenshot and return its decoded pixels. */
+async function probeShot(page, name) {
+  const file = path.join(SHOTS, name);
+  await page.screenshot({ path: file });
+  return decodePngFile(file);
+}
+
+/** Count pixels close to one rgb color inside a rect. */
+function countNear(image, x0, y0, w, h, color, tolerance = 30) {
+  let count = 0;
+  for (let y = y0; y < y0 + h; y += 1) {
+    for (let x = x0; x < x0 + w; x += 1) {
+      const px = pixel(image, x, y);
+      const off = Math.abs(px[0] - color[0]) + Math.abs(px[1] - color[1]) + Math.abs(px[2] - color[2]);
+      if (off <= tolerance) count += 1;
+    }
+  }
+  return count;
+}
+
+/** Count warm window pixels inside one horizontal band. */
+function countWarmInBand(image, y0, y1) {
+  let count = 0;
+  for (let y = y0; y < y1; y += 2) {
+    for (let x = 0; x < 960; x += 2) {
+      const [r, g, b] = pixel(image, x, y);
+      if (r > 150 && g > 110 && b < 150) count += 1;
+    }
+  }
+  return count;
+}
+
+/** Hold a key and take two shots of the player area, then compare the crops. */
+async function heroFrameDiff(page) {
+  await page.keyboard.down('KeyD');
+  await sleep(350);
+  const first = await state(page);
+  const shotA = await probeShot(page, 'probe-frame-a.png');
+  await sleep(130);
+  const second = await state(page);
+  const shotB = await probeShot(page, 'probe-frame-b.png');
+  await page.keyboard.up('KeyD');
+  const a = Math.round(first.player.x) - cameraOf(first.player.x);
+  const b = Math.round(second.player.x) - cameraOf(second.player.x);
+  let diff = 0;
+  for (let y = 440; y < 480; y += 2) {
+    for (let off = 0; off < 26; off += 2) {
+      const p1 = pixel(shotA, a + off, y);
+      const p2 = pixel(shotB, b + off, y);
+      if (Math.abs(p1[0] - p2[0]) + Math.abs(p1[1] - p2[1]) + Math.abs(p1[2] - p2[2]) > 40) diff += 1;
+    }
+  }
+  return diff;
+}
+
+/** Watch one moon pass and return the measured disc width in pixels.
+ * waitUntil evals the predicate: waitForFunction with a string arrow evaluates the
+ * function object itself, which is always truthy, and would wait for nothing. */
+async function measureMoon(page) {
+  await waitUntil(page, 's => s.moonU > 0.47 && s.moonU < 0.53', 16000);
+  const view = await page.evaluate(() => {
+    const u = window.__game.state.moonU;
+    const cfg = window.__gameConfig;
+    return {
+      x: Math.round(cfg.MOON_CX - cfg.MOON_RX * Math.cos(Math.PI * u)),
+      y: Math.round(cfg.MOON_CY - cfg.MOON_RY * Math.sin(Math.PI * u)),
+      r: cfg.MOON_R,
+    };
+  });
+  const image = await probeShot(page, 'probe-moon.png');
+  if (view.x < 200 || view.x > 760) throw new Error(`the moon sits at x=${view.x}, not on screen`);
+  let first = -1;
+  let last = -1;
+  for (let x = view.x - view.r - 6; x <= view.x + view.r + 6; x += 1) {
+    const [r, g, b] = pixel(image, x, view.y);
+    if (r > 120 && g > 100 && b > 70) {
+      if (first < 0) first = x;
+      last = x;
+    }
+  }
+  const corner = pixel(image, view.x - view.r + 4, view.y - view.r + 4);
+  return { width: last - first, corner, view };
 }
 
 /** Run a small function in the page and return its value. A frame rebuilds the
@@ -211,6 +319,86 @@ async function caseSideTouch(page) {
   const current = await state(page);
   if (current.enemiesAlive !== before) throw new Error('a side touch killed the enemy instead of the player');
   if (current.deaths < 1 && current.lives === 3) throw new Error('a side touch cost the player nothing');
+}
+
+/** The arrow keys and the layout keys must drive the player too (spec Player 2-3). */
+async function caseKeys(page) {
+  await page.evaluate(() => window.__game.api.newRun());
+  await sleep(150);
+  const before = (await state(page)).player.x;
+  await tap(page, 'ArrowRight', 500);
+  const right = (await state(page)).player.x;
+  if (right <= before + 60) throw new Error(`ArrowRight moved the player only ${right - before} px`);
+  await tap(page, 'ArrowLeft', 500);
+  if ((await state(page)).player.x >= right - 60) throw new Error('ArrowLeft did not move the player left');
+  await tap(page, 'KeyQ', 400);
+  if ((await state(page)).player.x >= right - 60) throw new Error('Key Q did not move the player left');
+  const ground = (await state(page)).player.y;
+  await tap(page, 'ArrowUp', 130);
+  await sleep(160);
+  if ((await state(page)).player.y >= ground - 40) throw new Error('ArrowUp did not lift the player');
+}
+
+/** The ground shows grass over dirt, and a floating platform shows stone. */
+async function caseMaterials(page) {
+  await page.evaluate(() => window.__game.api.newRun());
+  await sleep(700);
+  const st = await state(page);
+  const cfg = await page.evaluate(readPalette);
+  const image = await probeShot(page, 'probe-materials.png');
+  const grass = cfg.grass.map(hexToRgb);
+  const dirt = cfg.dirt.map(hexToRgb);
+  const stone = cfg.stone.map(hexToRgb);
+  const grassCount = grass.reduce((sum, c) => sum + countNear(image, 120, 481, 700, 6, c, 40), 0);
+  const dirtCount = dirt.reduce((sum, c) => sum + countNear(image, 120, 505, 700, 30, c, 40), 0);
+  if (grassCount < 400) throw new Error(`only ${grassCount} grass pixels on the ground strip`);
+  if (dirtCount < 400) throw new Error(`only ${dirtCount} dirt pixels under the grass strip`);
+  const platform = st.platforms.find((p) => p.x > 60 && p.x + p.w < 900);
+  if (!platform) throw new Error('no platform on screen to read');
+  const left = platform.x - cameraOf(st.player.x);
+  const cap = stone.slice(0, 2).reduce((sum, c) => sum + countNear(image, left, platform.y,
+    platform.w, 5, c, 34), 0);
+  const body = stone.slice(2).reduce((sum, c) => sum + countNear(image, left, platform.y + 6,
+    platform.w, platform.h - 6, c, 34), 0);
+  if (cap < 60) throw new Error(`only ${cap} light cap pixels on a stone platform`);
+  if (body < 60) throw new Error(`only ${body} stone body pixels on a platform`);
+}
+
+/** The far city layer holds the most lit windows, the near layer the fewest. */
+async function caseCityWindows(page) {
+  await page.evaluate(() => window.__game.api.newRun());
+  await sleep(600);
+  const image = await probeShot(page, 'probe-windows.png');
+  const far = countWarmInBand(image, 250, 320);
+  const mid = countWarmInBand(image, 320, 400);
+  const near = countWarmInBand(image, 400, 478);
+  if (far < 30) throw new Error(`only ${far} lit windows in the far layer`);
+  if (!(far > mid && mid >= near)) throw new Error(`windows do not thin out to the front: ${far}/${mid}/${near}`);
+}
+
+/** The moon is a disc: about 88 px wide, with sky in the corner of its box. */
+async function caseMoonDisc(page) {
+  const moon = await measureMoon(page);
+  if (moon.width < 70 || moon.width > 96) throw new Error(`the moon disc is ${moon.width} px wide`);
+  const [r, g, b] = moon.corner;
+  if (!(b > r + 15 && b > g + 15)) throw new Error(`the corner of the moon box is not sky: ${moon.corner}`);
+}
+
+/** The hero sprite changes frames while the player runs (spec Player 9). */
+async function caseHeroFrames(page) {
+  await page.evaluate(() => window.__game.api.newRun());
+  await sleep(400);
+  const diff = await heroFrameDiff(page);
+  if (diff < 12) throw new Error(`the hero sprite changed in only ${diff} sampled points`);
+}
+
+/** The control hint shows during the first seconds of a level (spec Player 4). */
+async function caseHint(page) {
+  await page.evaluate(() => window.__game.api.newRun());
+  await sleep(500);
+  const image = await probeShot(page, 'probe-hint.png');
+  const count = countNear(image, 480 - 78, 540 - 46, 156, 12, [207, 216, 255], 60);
+  if (count < 60) throw new Error(`the hint strip holds only ${count} glyph pixels`);
 }
 
 /** Spend one life: drop a bomb above the player and wait for the new count. */
@@ -374,6 +562,12 @@ async function main() {
 
   const cases = [
     ['initial', () => caseInitial(page)],
+    ['keys', () => caseKeys(page)],
+    ['materials', () => caseMaterials(page)],
+    ['city-windows', () => caseCityWindows(page)],
+    ['moon-disc', () => caseMoonDisc(page)],
+    ['hero-frames', () => caseHeroFrames(page)],
+    ['hint', () => caseHint(page)],
     ['move', () => caseMove(page)],
     ['jump', () => caseJump(page)],
     ['moon', () => caseMoon(page)],

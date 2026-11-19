@@ -1,7 +1,7 @@
 # Design guidelines for game2
 
 Scope: These guidelines apply to the game2 project only.
-Id: `DG-P-01` … `DG-P-12`
+Id: `DG-P-01` … `DG-P-13`
 
 The project mirrors the decisions of `game1`. Each entry names the decision, the
 reason, and the rejected alternative. The implementation treats these entries as
@@ -21,6 +21,7 @@ binding.
 | `DG-P-10` | 2D texture style |
 | `DG-P-11` | Opaque parallax silhouettes |
 | `DG-P-12` | Game over as one DOM headline |
+| `DG-P-13` | Control hint from baked pixel glyphs |
 
 ## How this project reads game1
 
@@ -303,6 +304,14 @@ supersedes the flat-rectangle clause: the palette below keeps its force.
 | blast | `#ff8a3d` flash |
 | heart, full | `#f0544e` |
 | heart, spent | `#2a2f4a` |
+| grass, four shades | `#63a55c` `#3d7c46` `#265429` `#16341f` |
+| dirt, four shades | `#5a4130` `#43301f` `#332316` `#1f150e` |
+| stone, four shades | `#5d6793` `#414a6c` `#2f374f` `#1b2032` |
+| city wall, far to near | `#3a4272` → `#171d38`, four shades each layer |
+| horizon haze | `#3a2b52` `#54365a` `#6b3f57` |
+| moon, four shades | `#fff6dd` `#f7e8c0` `#dcc49b` `#a8977a` |
+| jet underside | `#5d7fa8` |
+| blast core | `#fff0a8` |
 
 **Decision.** The draw order: sky gradient, stars, moon glow, moon disc, far
 layer, mid layer, near layer, platforms, entities, blasts, hearts.
@@ -313,34 +322,43 @@ glance. Fixed colors keep the mood identical across runs.
 **Rejected.** A daytime palette: window glow loses against a bright sky.
 Per-object dynamic lighting: shader cost for little visual gain.
 
-## DG-P-10: 2D texture style
+## DG-P-10: Material textures and animated sprite frames
 
-**Decision.** The game draws city layers, platforms, and entities from 2D
-textures, not from flat rectangles. One texture atlas holds all tiles and
-sprites. The game generates the pixel-art atlas at runtime with a seeded random
-generator and uploads it once at startup. No image file ships with the game. The
-atlas scales with nearest-neighbour filtering, so tiles stay flat and
-pixel-sharp. Tile interiors use one shared dark infill from the `DG-P-09`
-palette. Each solid top edge gets a 1-pixel light line in the edge hue. Each
-entity sprite carries a thin dark outline. One strong hue stays reserved for the
-player and the hazards, never for city art. HUD hearts are exempt.
+**Decision.** The game draws every surface from a 2D texture in one atlas. The
+game paints the atlas at runtime into an offscreen canvas and uploads it once, so
+no image file ships with the game and no build step exists. The rules:
 
-**Reason.** The spec rules out rectangles for city layers, platforms, and
-entities. The research in `docs/references/README.md` gives the recipe: a
-saturated hero against desaturated grounds (Celeste, Dead Cells, Sonic Mania),
-one shared dark tile infill so the ground never competes with the player
-(Celeste), a 1-pixel light top edge that names the standable surface (Celeste),
-and dark outlines that separate sprites from any background (Super Meat Boy,
-Hollow Knight). Runtime generation needs no importer and adds no asset file.
-Sources: `https://ferdwolf.github.io/teemo.dev/games/celeste.html`,
+| Rule | Detail |
+|---|---|
+| One ramp per material | Four shades of one hue. A pixel picks a shade by index, never a mixed color. |
+| Named materials | `grass` and `dirt` for the ground, `stone` plus `stoneCap` for a platform, `farWall`, `midWall`, `nearWall` for the city, `moon`, `shadow`, `bomb`, two hearts, three roof props. |
+| Tileable tiles | The grass, dirt, stone, and façade tiles repeat on whole pixel counts. Building heights land on an 8 px step, so a tile never stretches. |
+| One clip per cell | A paint job may only write inside its own atlas cell. A brush that reaches past the edge is dropped. |
+| Half-texel inset | The uv rect of a tile is inset by half a texel on all four sides, so a neighbour cannot bleed in. |
+| Sprite frame strips | The hero has two idle frames, six run frames, and one frame each for a jump, a fall, and a hurt. An enemy has four shuffle frames per direction. The renderer picks the frame from `world.time` and the walk distance. |
+| Nearest filtering | `NEAREST` on both axes and no mipmaps, so tiles stay pixel-sharp. |
+| Value order | The far city layer is the brightest, the near layer the darkest. Depth comes from value steps and a warm haze band, never from alpha. |
+
+**Reason.** A four-shade ramp is what makes a generated tile read as a material
+instead of as noise: the eye reads the bevel of a stone block and the joints of a
+course, not the speckle inside it. The clip rule and the half-texel inset are the
+two mechanics that keep the atlas a clean grid: an unclipped brush bled stone
+colors into the dirt tile and made the ground look blue. Frames tied to the walk
+distance, not to a separate animation state, keep `render/` free of state, which
+`DG-P-02` requires. The research in `docs/references/README.md` still drives the
+palette: a saturated hero against desaturated grounds, one dark infill for all
+solids, a light top edge on every standable surface, and dark outlines on all
+sprites. Sources: `https://ferdwolf.github.io/teemo.dev/games/celeste.html`,
 `https://aran.ink/2020-07-27/a-tale-of-two-platformers-part-2/`,
 `https://www.gamedeveloper.com/design/a-visual-analysis-of-the-art-of-i-dead-cells-i->`,
 `https://www.mandible.net/writing/super-meat-boy`.
 
-**Rejected.** Pre-made PNG atlases: an import pipeline and blur at non-integer
-scales cost more than runtime generation. Linear filtering and mipmaps: they
-smear the pixel look. High-resolution painted art: the Ori pipeline needs painted
-layers, outside this scope.
+**Rejected.** Pre-made PNG atlases stand rejected. They need an importer, a
+loader state before the first frame, and blur at non-integer scales, and the art
+of two packs rarely matches this palette. Linear filtering and mipmaps stand
+rejected: they smear the pixel look. One shared ramp for all materials stands
+rejected: grass and stone then read as the same surface. A DOM control hint stands
+rejected, see `DG-P-13`.
 
 ## DG-P-11: Opaque parallax silhouettes
 
@@ -377,6 +395,25 @@ moves, so it does not fight the WebGL scaling of the canvas.
 **Rejected.** A canvas-drawn banner: it would need a font atlas for one sentence.
 A DOM hearts row: the HUD must stay in canvas space to keep the screen-space HUD
 in one place.
+
+## DG-P-13: Control hint from baked pixel glyphs
+
+**Decision.** The game draws the control hint inside the canvas. A baked 3x5 pixel
+font lives in `render/textures.js`, and the painter writes the two lines "A/D WALK"
+and "SPACE JUMP" into one atlas tile at startup. The renderer draws that tile for
+the first 7 seconds of a level, then stops. `HINT_SECONDS` in `config.js` fixes the
+time.
+
+**Reason.** A new player must learn the keys without a tutorial screen and without
+a second DOM text node, which `DG-P-12` forbids. One baked tile costs one draw call
+and no font machinery. The keys are a fact of `docs/spec.md`, so the hint and the
+spec stay tied together.
+
+**Rejected.** A DOM hint stands rejected: `DG-P-12` names one text node and a DOM
+element would fight the scaled canvas. A `canvas.fillText` hint stands rejected:
+the 2D context of the page cannot draw into the WebGL canvas without a second
+canvas and a texture upload per change. A glyph atlas for a full alphabet stands
+rejected: two lines of fixed text need thirteen glyphs, not a font engine.
 
 ## Links
 

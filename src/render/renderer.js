@@ -1,15 +1,23 @@
-// The WebGL2 drawing layer of game2 (DG-P-02, DG-P-09).
-// It owns the context, the atlas texture, and the draw queue.
-// A draw* call only pushes work; draw() sorts it by program and runs it once.
-// This module reads world state and never changes it.
+// The WebGL2 drawing layer of game2 (DG-P-02, DG-P-09, DG-P-10).
+// It owns the context, the atlas texture, and the draw queue. A draw* call only
+// pushes work; flush() sorts the queue by program and layer and runs it once.
+// This module reads world state and never changes it: the sprite frame an entity
+// shows is derived from world.time here, so an animation needs no extra state.
 
 import * as C from '../config.js';
 import { createPrograms } from './shaders.js';
 import { createAtlas } from './textures.js';
-import { buildCity, layerTiles, moonPos, starField } from './background.js';
+import { buildCity, moonPos, starField, horizonBand } from './background.js';
 
-// Three programs mean at most three uploads of the shared unit quad.
+// One shared unit quad, uploaded once: a_unit spans [-1, 1].
 const QUAD = new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]);
+
+// The layer numbers of the DG-P-09 draw order. A bigger number draws later.
+const LAYER = {
+  sky: 0, horizon: 5, star: 10, moonGlow: 20, moon: 21,
+  city: 30, ground: 40, platform: 50, shadow: 60, jet: 61, bomb: 62,
+  enemy: 63, hero: 64, blast: 70, hint: 80, heart: 90,
+};
 
 /** Return [r, g, b, a] in 0..1 for a #rrggbb string or a rgba() string. */
 export function parseColor(text) {
@@ -18,7 +26,36 @@ export function parseColor(text) {
     return [((value >> 16) & 255) / 255, ((value >> 8) & 255) / 255, (value & 255) / 255, 1];
   }
   const parts = text.match(/[\d.]+/g).map(Number);
-  return [parts[0] / 255, parts[1] / 255, parts[2] / 255, (parts[3] ?? 1)];
+  return [parts[0] / 255, parts[1] / 255, parts[2] / 255, (parts[3] ?? 1) / 1];
+}
+
+/** Return how many times a tile of tilePx fills px pixels, at least once. */
+function tileCount(px, tilePx) {
+  return Math.max(1, Math.round(px / tilePx));
+}
+
+/** Return the tile record mirrored on x, so a right-facing sprite faces left. */
+function mirrored(tile) {
+  return { uv: [tile.uv[2], tile.uv[1], tile.uv[0], tile.uv[3]], w: tile.w, h: tile.h };
+}
+
+/** Return the sprite frame name a hero shows now. Run, idle, jump, fall, or hurt. */
+function heroFrame(atlas, hero, player, time) {
+  if (!player.alive) return hero.hurt;
+  if (!player.landed) return player.vy < 0 ? hero.jump : hero.fall;
+  if (Math.abs(player.vx) > 1) {
+    const step = Math.floor(time * C.ANIM_RUN_FPS) % hero.run.length;
+    return hero.run[step];
+  }
+  const step = Math.floor(time * C.ANIM_IDLE_FPS) % hero.idle.length;
+  return hero.idle[step];
+}
+
+/** Return the sprite frame name an enemy shows now. */
+function enemyFrame(atlas, frames, enemy) {
+  const list = enemy.dir > 0 ? frames.right : frames.left;
+  const step = Math.floor((enemy.x + (enemy.dir > 0 ? 0 : 999)) / 8) % list.length;
+  return list[Math.abs(step) % list.length];
 }
 
 /** Return a new renderer for one canvas. */
@@ -29,6 +66,7 @@ export function createRenderer(canvas) {
   const atlas = createAtlas(gl);
   const city = buildCity(C.CITY_SEED, C.LEVEL_WIDTH);
   const stars = starField(C.CITY_SEED);
+  const horizon = horizonBand();
 
   const buffer = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
@@ -38,11 +76,6 @@ export function createRenderer(canvas) {
   gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
   let queue = [];
-
-  /** Reset the queue for one frame. */
-  function beginFrame() {
-    queue = [];
-  }
 
   /** Push one draw item. `order` keeps the layer order of DG-P-09. */
   function push(order, item) {
@@ -71,143 +104,188 @@ export function createRenderer(canvas) {
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   }
 
-  /** Sort the queue by program and layer order, then draw every item. */
+  /** Sort the queue by layer and program, then draw every item. */
   function flush() {
     const first = { quad: 0, glow: 1, atlas: 2 };
     queue.sort((a, b) => (a.order - b.order) || (first[a.program] - first[b.program]));
     for (const item of queue) run(item);
   }
 
-  /** One frame: the sky first, then the world in camera space, then the HUD. */
-  function draw(world, cameraX) {
-    beginFrame();
-    gl.clearColor(...parseColor(C.COLOR.skyTop), 1);
-    gl.clear(gl.COLOR_BUFFER_BIT);
-    drawSky(world);
-    drawWorld(world, cameraX, atlas);
-    drawHud(world, atlas);
-    flush();
-  }
-
-  /** Queue the sky gradient, the stars, and the moon. */
-  function drawSky(world) {
-    push(0, {
-      program: 'quad',
-      uniforms: {
-        u_rect: [0, 0, C.VIEW_W, C.VIEW_H],
-        u_color: parseColor(C.COLOR.skyTop),
-        u_color2: parseColor(C.COLOR.skyBottom),
-        u_grad: 1,
-      },
-    });
-    for (const star of stars) {
-      push(10, {
-        program: 'quad',
-        uniforms: { u_rect: [star.x, star.y, star.size, star.size], u_color: parseColor(C.COLOR.star), u_color2: parseColor(C.COLOR.star), u_grad: 0 },
-      });
-    }
-    const moon = moonPos(world.moonTime);
-    if (moon.y < C.VIEW_H + C.MOON_R) {
-      push(20, {
-        program: 'glow',
-        uniforms: {
-          u_circle: [moon.x, moon.y, C.MOON_R * 3.4],
-          u_color: parseColor(C.COLOR.moon),
-          u_inner: 0.24,
-          u_intensity: 0.55,
-        },
-      });
-      push(21, {
-        program: 'quad',
-        uniforms: { u_rect: [moon.x - C.MOON_R, moon.y - C.MOON_R, C.MOON_R * 2, C.MOON_R * 2], u_color: parseColor(C.COLOR.moon), u_color2: parseColor(C.COLOR.moon), u_grad: 0 },
-      });
-    }
-  }
-
-  /** Queue one textured rect in screen pixels. `shift` moves it with the camera. */
-  function worldRect(order, tile, shift, x, y, w, h, tilesX = 1, tilesY = 1) {
+  /** Queue one atlas tile over a pixel rect, tiled by whole repeats. */
+  function rect(order, tile, x, y, w, h, tilesX, tilesY) {
     push(order, {
       program: 'atlas',
       texture: true,
       uniforms: {
-        u_rect: [x - shift, y, w, h],
+        u_rect: [x, y, w, h],
         u_uv: tile.uv,
-        u_tiles: [tilesX, tilesY],
+        u_tiles: [tilesX ?? tileCount(w, tile.w), tilesY ?? tileCount(h, tile.h)],
       },
     });
   }
 
-  /** Queue the city layers, the platforms, and every entity in DG-P-09 order. */
-  function drawWorld(world, cameraX, atlas) {
-    const layers = layerTiles().map((key) => atlas[key]);
-    for (let index = 0; index < city.length; index += 1) {
-      const layer = city[index];
+  /** Queue one flat color rect with an optional vertical gradient. */
+  function solid(order, x, y, w, h, color, color2 = null, alpha = 1) {
+    push(order, {
+      program: 'quad',
+      uniforms: {
+        u_rect: [x, y, w, h],
+        u_color: [...parseColor(color).slice(0, 3), alpha],
+        u_color2: [...parseColor(color2 || color).slice(0, 3), alpha],
+        u_grad: color2 ? 1 : 0,
+      },
+    });
+  }
+
+  /** Queue one soft radial disc. */
+  function glow(order, x, y, radius, color, inner, intensity) {
+    push(order, {
+      program: 'glow',
+      uniforms: {
+        u_circle: [x, y, radius],
+        u_color: parseColor(color),
+        u_inner: inner,
+        u_intensity: intensity,
+      },
+    });
+  }
+
+  /** Queue the sky, the horizon haze, the stars, and the moon. */
+  function drawSky(world) {
+    solid(LAYER.sky, 0, 0, C.VIEW_W, C.VIEW_H, C.COLOR.skyTop, C.COLOR.skyBottom);
+    for (const band of horizon) {
+      solid(LAYER.horizon, 0, band.y, C.VIEW_W, band.h, band.color, null, band.alpha);
+    }
+    for (const star of stars) {
+      const twinkle = 0.55 + 0.45 * Math.sin(world.time * star.speed + star.phase);
+      solid(LAYER.star, star.x, star.y, star.size, star.size, C.COLOR.star, null, twinkle);
+      if (star.size > 2) rect(LAYER.star, atlas.tiles.spark, star.x - 3, star.y - 3, 8, 8);
+    }
+    const moon = moonPos(world.moonTime);
+    if (moon.y < C.VIEW_H + C.MOON_R) {
+      glow(LAYER.moonGlow, moon.x, moon.y, C.MOON_R * 3.6, C.COLOR.moon, 0.2, 0.5);
+      const size = C.MOON_R * 2;
+      rect(LAYER.moon, atlas.tiles.moon, moon.x - C.MOON_R, moon.y - C.MOON_R, size, size, 1, 1);
+    }
+  }
+
+  /** Queue the three city layers with their roof props, shifted by parallax. */
+  function drawCity(world, cameraX) {
+    city.forEach((layer, index) => {
+      const wall = atlas.tiles[layer.wall];
       for (const shape of layer.shapes) {
         const x = shape.x - cameraX * layer.factor;
-        if (x + shape.w < 0 || x > C.VIEW_W) continue;
-        worldRect(30 + index, layers[index], 0, x, shape.y, shape.w, shape.h,
-          Math.max(1, Math.round(shape.w / 16)), Math.max(1, Math.round(shape.h / 16)));
+        if (x + shape.w < -20 || x > C.VIEW_W + 20) continue;
+        rect(LAYER.city + index, wall, x, shape.y, shape.w, shape.h);
+        if (shape.prop) {
+          const prop = atlas.tiles[shape.prop];
+          const at = x + Math.round(shape.w / 2 - prop.w / 2);
+          rect(LAYER.city + index, prop, at, shape.y - prop.h, prop.w, prop.h, 1, 1);
+        }
       }
-    }
-    drawSolids(world, cameraX, atlas);
-    drawEntities(world, cameraX, atlas);
+    });
   }
 
-  /** Queue the ground and the platforms: rock body plus one cap row on top. */
-  function drawSolids(world, cameraX, atlas) {
-    for (const solid of [world.ground, ...world.platforms]) {
-      const x = solid.x - cameraX;
-      if (x + solid.w < 0 || x > C.VIEW_W) continue;
-      worldRect(50, atlas.rock, 0, x, solid.y + 3, solid.w, solid.h - 3,
-        Math.max(1, Math.round(solid.w / 16)), 1);
-      worldRect(51, atlas.cap, 0, x, solid.y, solid.w, 3, Math.max(1, Math.round(solid.w / 16)), 1);
+  /** Queue the grass ground and the stone platforms, both with a lit top edge. */
+  function drawSolids(world, cameraX) {
+    const ground = world.ground;
+    const gx = ground.x - cameraX;
+    rect(LAYER.ground, atlas.tiles.grass, gx, ground.y, ground.w, C.GRASS_BAND);
+    rect(LAYER.ground, atlas.tiles.dirt, gx, ground.y + C.GRASS_BAND, ground.w,
+      ground.h - C.GRASS_BAND);
+    for (const platform of world.platforms) {
+      const x = platform.x - cameraX;
+      if (x + platform.w < 0 || x > C.VIEW_W) continue;
+      rect(LAYER.platform, atlas.tiles.stone, x, platform.y + C.CAP_BAND, platform.w,
+        platform.h - C.CAP_BAND);
+      rect(LAYER.platform, atlas.tiles.stoneCap, x, platform.y, platform.w, C.CAP_BAND,
+        tileCount(platform.w, atlas.tiles.stoneCap.w), 1);
     }
   }
 
-  /** Queue the enemies, the jet, the bombs, the player, and the blast flashes. */
-  function drawEntities(world, cameraX, atlas) {
+  /** Queue one entity with its ground shadow: the hero, or one blob enemy. */
+  function drawEntity(box, frameName, cameraX, order) {
+    const tile = atlas.tiles[frameName];
+    const x = Math.round(box.x - cameraX);
+    const shadow = atlas.tiles.shadow;
+    const wide = Math.round(box.w * 1.2);
+    rect(LAYER.shadow, shadow, x - Math.round((wide - box.w) / 2), box.y + box.h - 3,
+      wide, shadow.h, 1, 1);
+    const drawTile = box.facingLeft ? mirrored(tile) : tile;
+    // The sprite is anchored on its feet, so its bottom stays on the platform.
+    rect(order, drawTile, x - Math.round((tile.w - box.w) / 2),
+      Math.round(box.y + box.h - tile.h), tile.w, tile.h, 1, 1);
+  }
+
+  /** Queue the enemies, the jet, the bombs, the hero, and the blast effects. */
+  function drawEntities(world, cameraX) {
     for (const enemy of world.enemies) {
-      const tile = enemy.dir > 0 ? atlas.enemyRight : atlas.enemyLeft;
-      const height = enemy.dead ? Math.max(4, enemy.h * (enemy.squash / C.ENEMY_SQUASH_S)) : enemy.h;
-      worldRect(60, tile, cameraX, enemy.x, enemy.y + enemy.h - height, enemy.w, height);
+      const name = enemyFrame(atlas, atlas.enemy, enemy);
+      if (enemy.dead) {
+        const tile = atlas.tiles[name];
+        const squashed = Math.max(5, Math.round(tile.h * (enemy.squash / C.ENEMY_SQUASH_S)));
+        rect(LAYER.enemy, mirrored(tile), Math.round(enemy.x - cameraX),
+          Math.round(enemy.y + enemy.h - squashed), tile.w, squashed, 1, 1);
+        continue;
+      }
+      drawEntity({ ...enemy, facingLeft: enemy.dir < 0 }, name, cameraX, LAYER.enemy);
     }
     if (world.jet.active) {
-      worldRect(61, atlas.jet, cameraX, world.jet.x, C.JET_Y, C.JET_W, C.JET_H, 3, 1);
+      const x = Math.round(world.jet.x - cameraX);
+      const tile = atlas.tiles.jet;
+      glow(LAYER.jet, x + C.JET_W / 2, C.JET_Y + C.JET_H / 2, 30, C.COLOR.jet, 0.1, 0.22);
+      rect(LAYER.jet, tile, x, C.JET_Y, tile.w, tile.h, 1, 1);
     }
     for (const bomb of world.bombs) {
-      worldRect(62, atlas.bomb, cameraX, bomb.x - C.BOMB_R, bomb.y - C.BOMB_R, C.BOMB_R * 2, C.BOMB_R * 2);
+      const tile = atlas.tiles.bomb;
+      rect(LAYER.bomb, tile, Math.round(bomb.x - tile.w / 2 - cameraX), Math.round(bomb.y - tile.h),
+        tile.w, tile.h, 1, 1);
     }
     const player = world.player;
-    worldRect(63, atlas.player, cameraX, player.x, player.y, player.w, player.h,
-      Math.max(1, Math.round(player.w / 16)), Math.max(1, Math.round(player.h / 16)));
+    drawEntity({ ...player, facingLeft: player.facing < 0 },
+      heroFrame(atlas, atlas.hero, player, world.time), cameraX, LAYER.hero);
     for (const blast of world.blasts) {
-      push(70, {
-        program: 'glow',
-        uniforms: {
-          u_circle: [blast.x - cameraX, blast.y, blast.radius],
-          u_color: parseColor(C.COLOR.blast),
-          u_inner: 0.1,
-          u_intensity: 1 - blast.age / C.BLAST_FLASH_S,
-        },
-      });
+      const life = 1 - blast.age / C.BLAST_FLASH_S;
+      glow(LAYER.blast, blast.x - cameraX, blast.y, blast.radius, C.COLOR.blast, 0.05, life);
+      glow(LAYER.blast, blast.x - cameraX, blast.y, blast.radius * 0.5, C.COLOR.blastHot, 0, life);
+      for (let i = 0; i < 7; i += 1) {
+        const angle = (i / 7) * Math.PI * 2;
+        const reach = blast.radius * (1 - life * 0.6);
+        solid(LAYER.blast, blast.x - cameraX + Math.cos(angle) * reach - 2,
+          blast.y + Math.sin(angle) * reach - 2, 5, 5, C.COLOR.blast, null, life);
+      }
     }
   }
 
-  /** Queue the hearts in screen space: no camera shift, drawn last (DG-P-09). */
-  function drawHud(world, atlas) {
+  /** Queue the control hint during the first seconds of the level (DG-P-13). */
+  function drawHint(world) {
+    if (world.time > C.HINT_SECONDS || world.gameOver) return;
+    const tile = atlas.tiles.hintMove;
+    rect(LAYER.hint, tile, Math.round(C.VIEW_W / 2 - tile.w / 2), C.VIEW_H - 46, tile.w, tile.h,
+      1, 1);
+  }
+
+  /** Queue the hearts in screen space, drawn last. */
+  function drawHud(world) {
     for (const heart of world.hearts) {
-      const tile = heart.full ? atlas.heartFull : atlas.heartSpent;
-      push(90, {
-        program: 'atlas',
-        texture: true,
-        uniforms: {
-          u_rect: [heart.x, heart.y, heart.w, heart.h],
-          u_uv: tile.uv,
-          u_tiles: [1, 1],
-        },
-      });
+      const tile = heart.full ? atlas.tiles.heartFull : atlas.tiles.heartSpent;
+      rect(LAYER.heart, tile, heart.x, heart.y, tile.w, tile.h, 1, 1);
     }
   }
 
-  return { draw, beginFrame, gl, programs, atlas };
+  /** One frame: the sky, the world in camera space, then the HUD. */
+  function draw(world, cameraX) {
+    queue = [];
+    gl.clearColor(...parseColor(C.COLOR.skyTop), 1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    drawSky(world);
+    drawCity(world, cameraX);
+    drawSolids(world, cameraX);
+    drawEntities(world, cameraX);
+    drawHint(world);
+    drawHud(world);
+    flush();
+  }
+
+  return { draw, gl, programs, atlas };
 }

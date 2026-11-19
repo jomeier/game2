@@ -12,12 +12,18 @@ The game is a 2D platformer. It runs in the browser. It uses JavaScript and WebG
 ## Player
 
 1. The player is a figure on platforms.
-2. Key A moves the player left. Key D moves the player right.
-3. The Space key jumps. The W key also jumps.
-4. Gravity pulls the player down. The player lands on platforms.
-5. A side touch from an enemy kills the player.
-6. A bomb blast kills the player.
-7. After death, the game takes one life and restarts the level.
+2. Key A moves the player left. Key D moves the player right. The left arrow and
+   the right arrow do the same. Key Q also moves left.
+3. The Space key jumps. The W key, the Z key, and the up arrow also jump.
+4. The game draws two control lines inside the canvas for the first 7 seconds of
+   a level. They name the keys from items 2 and 3.
+5. Gravity pulls the player down. The player lands on platforms.
+6. A side touch from an enemy kills the player.
+7. A bomb blast kills the player.
+8. After death, the game takes one life and restarts the level.
+9. The player sprite shows the frames of a run cycle while the player moves, an
+   idle frame while the player stands, and one frame each for a rise and a fall.
+10. The enemy sprite shows the frames of a shuffle while the enemy walks.
 
 ## Enemies
 
@@ -41,6 +47,12 @@ The game is a 2D platformer. It runs in the browser. It uses JavaScript and WebG
 3. The game uses three layers or more.
 4. The three city layers are fully opaque. The moon and stars never show through buildings.
 5. The game draws city layers, platforms, and entities from 2D textures. It does not use flat color rectangles for them.
+6. The ground shows a grass strip on top and a dirt body below it. A floating
+   platform shows stone with visible block joints and a light top edge.
+7. The three city layers show building façades with window rows. Windows are lit
+   in the far layer most of all and in the near layer least of all.
+8. The moon is a disc with dark seas and craters. It has a round edge, not a
+   square one.
 
 ## Level geometry
 
@@ -66,3 +78,6 @@ The game is a 2D platformer. It runs in the browser. It uses JavaScript and WebG
 1. A test script starts the game in a headless browser.
 2. The script presses keys and checks the game state.
 3. The script saves screenshots to `shots/`.
+4. The script also checks pixels: the grass strip, the dirt body, the stone of a
+   platform, the lit windows of a city layer, the round edge of the moon, and the
+   frames of the player sprite.

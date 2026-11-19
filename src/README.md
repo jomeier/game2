@@ -10,7 +10,7 @@ build step. See `design-guidelines/game2.md` for the rules behind the numbers.
 |---|---|
 | `index.html` | The page: the canvas, the GAME OVER headline, the module load. |
 | `main.js` | The game loop, the module wiring, the camera, the `window.__game` hook. |
-| `config.js` | Every tuning number and every color. A test reads them through `window.__gameConfig`. |
+| `config.js` | Every tuning number, color, and material ramp. A test reads them through `window.__gameConfig`. |
 | `input.js` | The held-key map from the browser key events. |
 | `physics.js` | Movement, landing, the stomp test, the ground probe for a walker. |
 | `entities.js` | One fixed step: the player, the enemies, the jet, the bombs, the blasts. |
@@ -32,9 +32,15 @@ script passes those flags. See [../tests/README.md](../tests/README.md).
 
 | Key | Action |
 |---|---|
-| A / D | move left, move right |
-| Space / W | jump |
+| A, D | move left, move right |
+| Arrow left, Arrow right | the same two moves |
+| Q | move left, for a keyboard where A sits elsewhere |
+| Space, W, Z, Arrow up | jump |
 | R | restart after GAME OVER |
+
+The game draws `A/D WALK` and `SPACE JUMP` inside the canvas for the first
+`HINT_SECONDS` of a level. `input.js` knows the key names and nothing else, and it
+calls `preventDefault` on every key it owns, so the page cannot scroll.
 
 ## The module rule
 
