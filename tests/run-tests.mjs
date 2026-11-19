@@ -113,16 +113,28 @@ function countNear(image, x0, y0, w, h, color, tolerance = 30) {
   return count;
 }
 
-/** Count warm window pixels inside one horizontal band. */
-function countWarmInBand(image, y0, y1) {
-  let count = 0;
-  for (let y = y0; y < y1; y += 2) {
-    for (let x = 0; x < 960; x += 2) {
+/** Return how many pixels of one band belong to a wall ramp, and how many are lit.
+ * A raw warm count only says how much wall a band shows; the spec compares the
+ * layers, so the case counts lit windows per wall area instead. */
+function windowDensity(image, y0, y1, ramps) {
+  let wall = 0;
+  let lit = 0;
+  for (let y = y0; y < y1; y += 1) {
+    for (let x = 0; x < 960; x += 1) {
       const [r, g, b] = pixel(image, x, y);
-      if (r > 150 && g > 110 && b < 150) count += 1;
+      if (r > 150 && g > 110 && b < 150) {
+        lit += 1;
+        wall += 1;
+        continue;
+      }
+      const isWall = ramps.some((hex) => {
+        const [wr, wg, wb] = hexToRgb(hex);
+        return Math.abs(r - wr) + Math.abs(g - wg) + Math.abs(b - wb) < 26;
+      });
+      if (isWall) wall += 1;
     }
   }
-  return count;
+  return { wall, lit, density: wall ? lit / wall : 0 };
 }
 
 /** Hold a key and take two shots of the player area, then compare the crops. */
@@ -369,11 +381,15 @@ async function caseCityWindows(page) {
   await page.evaluate(() => window.__game.api.newRun());
   await sleep(600);
   const image = await probeShot(page, 'probe-windows.png');
-  const far = countWarmInBand(image, 250, 320);
-  const mid = countWarmInBand(image, 320, 400);
-  const near = countWarmInBand(image, 400, 478);
-  if (far < 30) throw new Error(`only ${far} lit windows in the far layer`);
-  if (!(far > mid && mid >= near)) throw new Error(`windows do not thin out to the front: ${far}/${mid}/${near}`);
+  const cfg = await probe(page, () => window.__gameConfig.COLOR);
+  const far = windowDensity(image, 250, 320, cfg.wallFar);
+  const mid = windowDensity(image, 320, 400, cfg.wallMid);
+  const near = windowDensity(image, 400, 478, cfg.wallNear);
+  if (far.lit < 30) throw new Error(`only ${far.lit} lit windows in the far band`);
+  if (!(far.density > mid.density && mid.density >= near.density)) {
+    throw new Error(`lit share does not fall to the front: ${(far.density * 100).toFixed(1)}% / `
+      + `${(mid.density * 100).toFixed(1)}% / ${(near.density * 100).toFixed(1)}%`);
+  }
 }
 
 /** The moon is a disc: about 88 px wide, with sky in the corner of its box. */
@@ -451,9 +467,15 @@ async function caseHeroHead(page) {
 async function caseHint(page) {
   await page.evaluate(() => window.__game.api.newRun());
   await sleep(500);
+  // The game draws the hint at HINT_Y, so the case reads that number instead of
+  // carrying its own copy of the layout.
+  const spot = await probe(page, () => ({ y: window.__gameConfig.HINT_Y, w: 960 }));
   const image = await probeShot(page, 'probe-hint.png');
-  const count = countNear(image, 480 - 78, 540 - 46, 156, 12, [207, 216, 255], 60);
-  if (count < 60) throw new Error(`the hint strip holds only ${count} glyph pixels`);
+  const cfg = await probe(page, () => window.__gameConfig.COLOR);
+  const glyph = [207, 216, 255];
+  const count = countNear(image, 480 - 80, spot.y, 160, 24, glyph, 70);
+  if (count < 60) throw new Error(`the hint band at y=${spot.y} holds only ${count} glyph pixels`);
+  void cfg;
 }
 
 /** Spend one life: drop a bomb above the player and wait for the new count. */

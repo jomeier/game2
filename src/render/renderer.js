@@ -65,6 +65,8 @@ export function createRenderer(canvas) {
   const programs = createPrograms(gl);
   const atlas = createAtlas(gl);
   const city = buildCity(C.CITY_SEED, C.LEVEL_WIDTH);
+  // One light rim hue per layer, back to front.
+  const edgeKeys = ['edgeLightFar', 'edgeLightMid', 'edgeLightNear'];
   const stars = starField(C.CITY_SEED);
   const horizon = horizonBand();
 
@@ -169,19 +171,23 @@ export function createRenderer(canvas) {
     }
   }
 
-  /** Queue the three city layers with their roof props, shifted by parallax. */
+  /** Queue the three city layers: wall, roof prop, light rim, dark seam, cornice. */
   function drawCity(world, cameraX) {
     city.forEach((layer, index) => {
-      const wall = atlas.tiles[layer.wall];
+      const edgeLight = C.COLOR[edgeKeys[index]];
       for (const shape of layer.shapes) {
-        const x = shape.x - cameraX * layer.factor;
+        const x = Math.round(shape.x - cameraX * layer.factor);
         if (x + shape.w < -20 || x > C.VIEW_W + 20) continue;
-        rect(LAYER.city + index, wall, x, shape.y, shape.w, shape.h);
+        rect(LAYER.city + index, atlas.tiles[shape.wall], x, shape.y, shape.w, shape.h);
         if (shape.prop) {
           const prop = atlas.tiles[shape.prop];
-          const at = x + Math.round(shape.w / 2 - prop.w / 2);
-          rect(LAYER.city + index, prop, at, shape.y - prop.h, prop.w, prop.h, 1, 1);
+          rect(LAYER.city + index, prop, x + Math.round(shape.w / 2 - prop.w / 2),
+            shape.y - prop.h, prop.w, prop.h, 1, 1);
         }
+        // The three thin bands are what separates one building from the next.
+        solid(LAYER.city + index, x, shape.y, 1, shape.h, edgeLight);
+        solid(LAYER.city + index, x, shape.y, shape.w, 1, edgeLight);
+        solid(LAYER.city + index, x + shape.w - 1, shape.y, 1, shape.h, C.COLOR.edgeDark);
       }
     });
   }
@@ -261,8 +267,9 @@ export function createRenderer(canvas) {
   function drawHint(world) {
     if (world.time > C.HINT_SECONDS || world.gameOver) return;
     const tile = atlas.tiles.hintMove;
-    rect(LAYER.hint, tile, Math.round(C.VIEW_W / 2 - tile.w / 2), C.VIEW_H - 46, tile.w, tile.h,
-      1, 1);
+    solid(LAYER.hint - 1, Math.round(C.VIEW_W / 2 - tile.w / 2) - 6, C.HINT_Y - 5,
+      tile.w + 12, tile.h + 10, C.COLOR.skyTop, null, 0.55);
+    rect(LAYER.hint, tile, Math.round(C.VIEW_W / 2 - tile.w / 2), C.HINT_Y, tile.w, tile.h, 1, 1);
   }
 
   /** Queue the hearts in screen space, drawn last. */

@@ -64,6 +64,7 @@ export const CAP_BAND = 5;
 export const ANIM_RUN_FPS = 12;
 export const ANIM_IDLE_FPS = 2;
 export const HINT_SECONDS = 7;
+export const HINT_Y = 74;
 
 // Parallax factors from DG-P-04. A layer moves at camera * factor.
 export const PARALLAX = { far: 0.15, mid: 0.35, near: 0.6 };
@@ -84,9 +85,15 @@ export const COLOR = {
   window: '#ffc46b',
   windowCool: '#c3d4ff',
   windowDark: '#0d1226',
-  wallFar: ['#3a4272', '#2a3158', '#1e2444', '#151a32'],
-  wallMid: ['#242d54', '#18203c', '#101529', '#0a0e1d'],
-  wallNear: ['#171d38', '#0d1226', '#080b18', '#04060f'],
+  // Three clear value steps: the far layer is hazed and light, the near layer is
+  // almost black, so the city reads as depth without any transparency (DG-P-11).
+  wallFar: ['#4a5480', '#3a4368', '#2b3252', '#202744'],
+  wallMid: ['#2c3560', '#212a48', '#161d33', '#0f1426'],
+  wallNear: ['#1d2444', '#131a33', '#0b1020', '#060812'],
+  edgeLightFar: '#6a76a8',
+  edgeLightMid: '#3d4878',
+  edgeLightNear: '#2b3459',
+  edgeDark: '#04060f',
   farEdge: '#3a4272',
   midEdge: '#242d54',
   nearEdge: '#1c2445',
@@ -118,8 +125,8 @@ export const COLOR = {
   stone: '#414a6c',
   stoneDark: '#2f374f',
   stoneDeep: '#1b2032',
-  stoneCapLight: '#8b96c9',
-  stoneCapMid: '#4a5478',
+  stoneCapLight: '#6f7aab',
+  stoneCapMid: '#414a6c',
   stoneCapDark: '#232a40',
   grassCapLight: '#7cb86b',
   grassCapMid: '#417f47',

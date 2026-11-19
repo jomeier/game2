@@ -109,15 +109,22 @@ function paintGrass(buf, x0, y0, w, h, ramp, seed) {
 function paintDirt(buf, x0, y0, w, h, ramp, seed) {
   const random = seeded(seed);
   for (let y = 0; y < h; y += 1) {
-    const band = ramp[(y % 5 === 0 ? 2 : y % 3 === 0 ? 3 : 1)];
+    // The body darkens toward the bottom, so the strip reads as depth, not noise.
+    const deep = y > h * 0.55 ? 1 : 0;
+    const band = ramp[Math.min(3, (y % 5 === 0 ? 2 : y % 3 === 0 ? 3 : 1) + deep)];
     for (let x = 0; x < w; x += 1) {
       buf.set(x0 + x, y0 + y, random() > 0.88 ? ramp[0] : band);
     }
   }
-  for (let i = 0; i < 7; i += 1) {
+  // A strata line every sixth row gives the strip a readable structure.
+  for (let y = 5; y < h; y += 6) {
+    buf.fill(x0, y0 + y, w, 1, ramp[3]);
+    buf.fill(x0, y0 + y + 1, w, 1, ramp[2]);
+  }
+  for (let i = 0; i < 5; i += 1) {
     const px = Math.floor(random() * (w - 4));
     const py = 2 + Math.floor(random() * (h - 5));
-    const size = 2 + Math.floor(random() * 2);
+    const size = 3 + Math.floor(random() * 2);
     buf.fill(x0 + px, y0 + py, size, size, ramp[2]);
     buf.fill(x0 + px, y0 + py, size, 1, ramp[0]);
     buf.set(x0 + px, y0 + py + size, ramp[3]);
@@ -167,27 +174,34 @@ function paintCap(buf, x0, y0, w, h, light, mid, dark) {
   for (let x = 0; x < w; x += 3) buf.set(x0 + x, y0, light);
 }
 
-/** Paint one tileable building façade: floors, window grid with sills, grime. */
-function paintFacade(buf, x0, y0, w, h, wall, glass, seed, litChance) {
+/** Paint one tileable building façade: a wall gradient plus a window grid.
+ * `bay` sets the window pitch and `shift` moves the whole grid, so the A and the B
+ * variant of a layer do not line up. No full width floor lines: those turned the
+ * three layers into one wallpaper. */
+function paintFacade(buf, x0, y0, w, h, wall, glass, seed, litChance, bay, shift) {
   const random = seeded(seed);
-  const floorH = 8;
-  const bay = 8;
+  const windowW = bay - 5;
+  const windowH = 5;
   for (let y = 0; y < h; y += 1) {
-    // A vertical grime gradient pushes the bottom of a tower into shadow.
-    const shade = wall[y / h > 0.72 ? 3 : 2];
-    for (let x = 0; x < w; x += 1) buf.set(x0 + x, y0 + y, random() > 0.9 ? wall[1] : shade);
+    // One vertical value step per third: a tower reads taller with it.
+    const third = y < h / 3 ? 1 : y < (2 * h) / 3 ? 2 : 3;
+    for (let x = 0; x < w; x += 1) {
+      buf.set(x0 + x, y0 + y, random() > 0.93 ? wall[third - 1] : wall[third]);
+    }
   }
-  for (let fy = 0; fy < h; fy += floorH) {
-    buf.fill(x0, y0 + fy, w, 1, wall[0]);          // floor line catches the light
-    buf.fill(x0, y0 + fy + 1, w, 1, wall[3]);      // and drops a shadow below it
-    for (let bx = 0; bx < w; bx += bay) {
+  for (let fy = 4; fy + windowH + 1 < h; fy += 10) {
+    for (let bx = shift; bx + windowW <= w; bx += bay) {
       const lit = random() < litChance;
-      const wx = x0 + bx + 2;
-      const wy = y0 + fy + 3;
-      buf.fill(wx, wy, 3, 4, lit ? (random() > 0.7 ? glass[1] : glass[0]) : glass[2]);
-      buf.fill(wx, wy, 3, 1, lit ? glass[1] : glass[3]);
-      buf.fill(wx - 1, wy + 4, 5, 1, wall[0]);      // window sill
-      if (lit) buf.set(wx + 1, wy + 2, glass[1]);
+      const wx = x0 + bx;
+      const wy = y0 + fy;
+      buf.fill(wx, wy, windowW, windowH, lit ? (random() > 0.72 ? glass[1] : glass[0]) : glass[2]);
+      if (lit) {
+        buf.fill(wx, wy, windowW, 1, glass[1]);
+        buf.set(wx + 1, wy + 2, glass[1]);
+      } else {
+        buf.fill(wx, wy, windowW, 1, glass[3]);
+      }
+      buf.fill(wx - 1, wy + windowH, windowW + 2, 1, wall[0]);   // sill catches the light
     }
   }
 }
@@ -330,11 +344,9 @@ function paintBlob(buf, x0, y0, frame, colors, dir) {
   buf.fill(x0 + 2, y + 1, w - 4, h - 1, body);
   buf.fill(x0 + 2, y + 1, w - 4, 3, light);
   buf.fill(x0 + 2, y + h - 5, w - 4, 4, dark);
-  // A ridge of three horns along the back, on the side it walks away from.
-  for (let i = 0; i < 3; i += 1) {
-    const hx = dir > 0 ? 3 + i * 3 : w - 6 - i * 3;
-    buf.fill(x0 + hx, y + (i % 2), 2, 3, dark);
-  }
+  // One small spike on the back, so the head stays a clean round shape.
+  const spikeX = dir > 0 ? 3 : w - 5;
+  buf.fill(x0 + spikeX, y - 0, 2, 2, dark);
   const eyeX = dir > 0 ? w - 9 : 5;
   buf.fill(x0 + eyeX, y + 5, 4, 4, outline);
   buf.fill(x0 + eyeX + 1, y + 6, 2, 2, eye);
@@ -390,21 +402,33 @@ const GLYPHS = {
   R: ['XX ', 'X X', 'XX ', 'X X', 'X X'],
   T: ['XXX', ' X ', ' X ', ' X ', ' X '],
   O: ['XXX', 'X X', 'X X', 'X X', 'XXX'],
-  W: ['X X', 'X X', 'X X', 'XXX', 'XXX'],
+  W: ['X X', 'X X', 'XXX', 'XXX', 'X X'],
   L: ['X  ', 'X  ', 'X  ', 'X  ', 'XXX'],
   F: ['XXX', 'X  ', 'XX ', 'X  ', 'X  '],
   I: ['XXX', ' X ', ' X ', ' X ', 'XXX'],
   N: ['X X', 'XX ', 'XX ', 'X X', 'X X'],
   U: ['X X', 'X X', 'X X', 'X X', 'XXX'],
+  K: ['X X', 'X X', 'XX ', 'X X', 'X X'],
+  J: ['  X', '  X', '  X', 'X X', 'XXX'],
+  M: ['X X', 'XXX', 'XXX', 'X X', 'X X'],
+  G: ['XXX', 'X  ', 'X X', 'XXX', 'XXX'],
+  B: ['XX ', 'X X', 'XX ', 'X X', 'XX '],
+  H: ['X X', 'X X', 'XXX', 'X X', 'X X'],
+  V: ['X X', 'X X', 'X X', 'X X', ' X '],
+  X: ['X X', 'X X', ' X ', 'X X', 'X X'],
+  '0': ['XXX', 'X X', 'X X', 'X X', 'XXX'],
+  '-': ['   ', '   ', 'XXX', '   ', '   '],
   '/': ['  X', '  X', ' X ', 'X  ', 'X  '],
   ' ': ['   ', '   ', '   ', '   ', '   '],
 };
 
-/** Paint the control hint strip the game shows during the first seconds. */
+/** Paint the control hint strip the game shows during the first seconds.
+ * A letter the font lacks would vanish silently, so an unknown character throws. */
 function paintHint(buf, x0, y0, color, text) {
   let cursor = 0;
   for (const char of text) {
-    const glyph = GLYPHS[char] || GLYPHS[' '];
+    const glyph = GLYPHS[char];
+    if (!glyph) throw new Error(`the hint font has no glyph for "${char}"`);
     paintGlyph(buf, x0 + cursor, y0, glyph, color, 2);
     cursor += glyph[0].length * 2 + 2;
   }
@@ -527,13 +551,18 @@ function paintAtlas() {
   put('grassCap', 16, 4, (b, x, y, w, h) => paintCap(b, x, y, w, h,
     rgb(P.grassCapLight), rgb(P.grassCapMid), rgb(P.grassCapDark)));
 
-  // Facades: one tile per parallax layer, tileable in both directions.
-  put('farWall', 16, 32, (b, x, y, w, h) => paintFacade(b, x, y, w, h, RAMPS.far.shades,
-    GLASS, 41, 0.26));
-  put('midWall', 16, 32, (b, x, y, w, h) => paintFacade(b, x, y, w, h, RAMPS.mid.shades,
-    GLASS, 53, 0.16));
-  put('nearWall', 16, 32, (b, x, y, w, h) => paintFacade(b, x, y, w, h, RAMPS.near.shades,
-    GLASS, 67, 0.09));
+  // Facades: two tiles per parallax layer, tileable in both directions.
+  const facades = [
+    ['farWallA', RAMPS.far.shades, 41, 0.3, 8, 1],
+    ['farWallB', RAMPS.far.shades, 47, 0.24, 8, 5],
+    ['midWallA', RAMPS.mid.shades, 53, 0.17, 8, 1],
+    ['midWallB', RAMPS.mid.shades, 59, 0.13, 8, 5],
+    ['nearWallA', RAMPS.near.shades, 67, 0.08, 8, 1],
+    ['nearWallB', RAMPS.near.shades, 71, 0.05, 8, 5],
+  ];
+  for (const [name, ramp, seed, lit, bay, shift] of facades) {
+    put(name, 16, 32, (b, x, y, w, h) => paintFacade(b, x, y, w, h, ramp, GLASS, seed, lit, bay, shift));
+  }
 
   // Roof props for the skyline silhouette.
   const steel = rgb(P.propSteel);
@@ -599,9 +628,9 @@ function paintAtlas() {
     b.fill(x + 5, y + 1, 2, 3, rgb(P.bombFuse));
     b.set(x + 6, y, rgb(P.sparkLight));
   });
-  put('hintMove', 150, 12, (b, x, y) => {
-    paintHint(b, x, y + 1, rgb(P.hintGlyph), 'A/D WALK');
-    paintHint(b, x, y + 8, rgb(P.hintGlyph), 'SPACE JUMP');
+  put('hintMove', 156, 24, (b, x, y) => {
+    paintHint(b, x, y + 2, rgb(P.hintGlyph), 'A/D WALK');
+    paintHint(b, x, y + 14, rgb(P.hintGlyph), 'SPACE JUMP');
   });
 
   const clash = layout.collision();

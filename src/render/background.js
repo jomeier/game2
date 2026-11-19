@@ -1,9 +1,10 @@
 // Sky, stars, moon, and the three city layers of game2 (DG-P-04, DG-P-05, DG-P-11).
 // buildCity() returns the silhouette shapes for one fixed seed, so every run and
-// every screenshot shows the same skyline. The renderer draws the shapes from
-// façade tiles; nothing here touches WebGL.
+// every screenshot shows the same skyline. Each shape names its own wall tile, its
+// roof prop, and its own light edge, so the layers read as buildings and not as one
+// repeated pattern. The renderer draws the shapes; nothing here touches WebGL.
 // The layers hold no alpha: DG-P-11 wants opaque silhouettes, so depth comes from
-// the value steps and the façade tiles of the three layers.
+// the value steps of the three layers and the warm haze above the skyline.
 
 import * as C from '../config.js';
 import { MOON_CX, MOON_CY, MOON_RX, MOON_RY, MOON_PERIOD_S } from '../config.js';
@@ -55,28 +56,33 @@ export function horizonBand() {
   ];
 }
 
-/** Return one building: a box plus a roof prop that fits its width. */
-function building(random, x, width, height, props) {
+/** Return one building: a box, one of the two wall tiles, and a roof prop. */
+function building(random, index, x, width, height, layer) {
   const shape = { x, y: C.GROUND_Y - height, w: width, h: height };
-  if (props && width >= 34 && random() > 0.55) {
-    shape.prop = props[Math.floor(random() * props.length)];
+  // Two wall tiles alternate, so no two neighbours show the same window grid.
+  shape.wall = layer.walls[index % layer.walls.length];
+  // A wider block carries a taller roof prop.
+  if (width >= 40 && random() > 0.45) {
+    shape.prop = layer.props[Math.floor(random() * layer.props.length)];
   }
   return shape;
 }
 
-/** Build one layer: a row of buildings whose widths and heights come from a seed. */
-function buildLayer(seed, factor, wall, span, minH, maxH, gapMax, props) {
+/** Build one layer: a row of buildings with sky between them. */
+function buildLayer(seed, factor, walls, props, span, minH, maxH, gapMin, gapMax) {
   const random = seeded(seed);
   const shapes = [];
-  let x = -220;
-  while (x < span + 220) {
-    const width = 34 + Math.round(random() * 96);
-    // Heights land on an 8 px step: the facade tile stays unscaled.
+  let x = -260;
+  let index = 0;
+  while (x < span + 260) {
+    const width = 30 + Math.round(random() * 92);
+    // Heights land on an 8 px step, so a wall tile never stretches.
     const height = Math.round((minH + random() * (maxH - minH)) / 8) * 8;
-    shapes.push(building(random, x, width, height, props));
-    x += width + Math.round(random() * gapMax);
+    shapes.push(building(random, index, x, width, height, { walls, props }));
+    x += width + gapMin + Math.round(random() * gapMax);
+    index += 1;
   }
-  return { factor, wall, shapes };
+  return { factor, walls, shapes };
 }
 
 /** Return the three city layers from DG-P-04: far, mid, near. */
@@ -85,8 +91,10 @@ export function buildCity(seed, levelWidth) {
   const span = levelWidth + C.VIEW_W;
   const props = ['propAntenna', 'propTank', 'propVent'];
   return [
-    buildLayer(seed, C.PARALLAX.far, 'farWall', span, 150, 340, 26, props),
-    buildLayer(seed + 101, C.PARALLAX.mid, 'midWall', span, 110, 280, 34, props),
-    buildLayer(seed + 202, C.PARALLAX.near, 'nearWall', span, 70, 200, 46, []),
+    buildLayer(seed, C.PARALLAX.far, ['farWallA', 'farWallB'], props, span, 168, 352, 14, 40),
+    buildLayer(seed + 101, C.PARALLAX.mid, ['midWallA', 'midWallB'], props, span, 112, 288, 18, 52),
+    // The near layer is a row of dark rooftops: tall, far apart, so the sky shows
+    // between them and the mass never becomes one wall.
+    buildLayer(seed + 202, C.PARALLAX.near, ['nearWallA', 'nearWallB'], [], span, 48, 232, 52, 132),
   ];
 }
