@@ -10,6 +10,7 @@ was built from the documentation of `game1`, not from its code.
 - Shared rules: `standards/rules/` (a link to the rules clone)
 - Project guidelines: `design-guidelines/`
 - Game spec (source of truth): `docs/spec.md`
+- Lessons learned (read before touching art, geometry, or tooling): `docs/lessons.md`
 - User documentation: `docs/`
 
 ## Project facts
