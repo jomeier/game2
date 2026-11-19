@@ -51,13 +51,15 @@ preview path as a colour, its field packed four pixels per byte while the reader
 the game expected two, a missing command-line argument wrote a preview into a stray
 file named `430`, and `PX.copy(...)` - a call that copies FROM the buffer it sits
 on - painted all ten textures black. Encode and decode one field, and look at the file,
-before judging any picture. Encode and decode one field and compare the shares before judging any
-picture.
+before judging any picture.
 
-`LL-09` **A pixel counter must know every variant.** `city-windows` broke when the
-city grew a third tint per layer, because its denominator matched only the base ramp;
-and it also counted warm windows of the layers behind the band it measured. It now
-takes all three tints and attributes a lit pixel to the wall beside it.
+`LL-09` **A pixel counter must know every variant, and every scale.** `city-windows`
+broke when the city grew a third tint per layer, because its denominator matched only
+the base ramp, and it broke again on the shipped textures: the far layer's own mean
+rises with its lit windows, so a relative threshold called the brightest layer the
+darkest. It now divides the layer's baked value scale out of `FRONT_LAYER_TON` and
+judges one absolute threshold, which is why that number lives in `config.js` and not
+only in the generating tool.
 
 ## Geometry
 
@@ -78,3 +80,11 @@ with the server. `pgrep` first, then a pattern that only a real server matches.
 answered that I could not see images, and kept repeating it after I had in fact read
 two random codes correctly. The fix was not a rule but a habit: run the blind test,
 then report the result - and the same habit caught the stretched tiles of `LL-10`.
+
+`LL-13` **A sampled screenshot case fails for camera reasons.** `hero-head` reported
+one run frame with 7 helmet pixels against 17 in the others, in a suite that had
+passed 21 of 21 before, and I had touched nothing near the sprite. The case samples a
+frame, reads the player position, and then cuts the helmet out of an earlier shot, so
+one slow frame and the camera offset points at an empty wall. Before hunting an art
+bug, run the suite a second time: a case that moves the world while it measures it
+needs that confirmation.
