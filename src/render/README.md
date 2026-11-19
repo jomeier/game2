@@ -33,13 +33,13 @@ at most three times.
 | 5 | horizon haze bands | `quad` |
 | 10 | stars, and a spark on the bright ones | `quad`, `atlas` |
 | 20-21 | moon halo, then the moon disc | `glow`, `atlas` |
-| 30-32 | city far, mid, near, each with its roof props | `atlas` |
+| 30-32 | city far, mid, near: wall, roof prop, light rim, cornice, dark seam | `atlas`, `quad` |
 | 40 | ground: grass strip over a dirt body | `atlas` |
 | 50 | platforms: stone body, then the light cap row | `atlas` |
 | 60 | contact shadow under the hero and every enemy | `atlas` |
 | 61-64 | jet, bombs, enemies, hero | `atlas`, `glow` |
 | 70 | blast: two glows and seven debris squares | `glow`, `quad` |
-| 80 | control hint, first 7 seconds only | `atlas` |
+| 79-80 | control hint with its dark backing, first `HINT_SECONDS` only | `quad`, `atlas` |
 | 90 | hearts, in screen space | `atlas` |
 
 The city layers are fully opaque, so buildings cover the moon where they overlap.
@@ -62,7 +62,7 @@ pixels at the helmet every other stride.
 |---|---|
 | `grass`, `dirt` | the ground strip and its body |
 | `stone`, `stoneCap`, `grassCap` | a platform body, its light top edge, a grass edge |
-| `farWall`, `midWall`, `nearWall` | the three city layers |
+| `farWallA/B`, `midWallA/B`, `nearWallA/B` | the city layers; two tiles each so no two neighbours share a window grid |
 | `propAntenna`, `propTank`, `propVent` | roof silhouettes |
 | `moon` | the moon disc: sphere shading, maria, craters, alpha outside the disc |
 | `shadow`, `spark` | the contact shadow under an entity, the bright star cross |
@@ -81,7 +81,9 @@ distance for an enemy, so no module keeps animation state.
 - Each paint job carries a clip box and may only write inside its own atlas cell.
   Before the allocator existed, the stone mortar bled into the dirt cell and made
   the ground read blue.
-- Building heights land on an 8 px step, so a façade tile never stretches.
+- Building heights land on an 8 px step, so a façade tile never stretches. The
+façade tiles carry no full width floor lines: those made the three layers read as
+one wallpaper pattern.
 - A mirrored sprite swaps the uv x pair; see `mirrored()` in `renderer.js`.
 
 ## Debugging a black or wrong frame
