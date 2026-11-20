@@ -36,7 +36,7 @@ Git. Exit is 0 when every case passed, 1 with the failed names.
 | `initial` | the hook answers, the run starts with 3 lives |
 | `keys` | ArrowRight, ArrowLeft, and Q move; ArrowUp jumps |
 | `materials` | grass over dirt on the ground, stone body and light cap on a platform |
-| `city-windows` | the shipped façades and house sprites light most windows in the far row and fewest in the near row; every picture matches its box; no sprite covers its own top row |
+| `city-windows` | the night ladder in `FRONT_TIEFE` holds on the shipped files (a further row is darker, the measured ratios match the config), and the far row lights most windows while the near row lights fewest; a window is measured locally - warm and brighter than its own 3x3 neighbourhood - so a bright wall is not counted as one; every picture matches its box; no sprite covers its own top row |
 | `city-tints` | each row shows all of its designs (ten far fronts, twelve sprite houses), none covers half the row, none sits twice in a row |
 | `tile-fit` | every surface takes a whole number of its tile: ground bands, level width, moon disc, platform bodies, every building |
 | `moon-disc` | the moon measures about 88 px wide and its box corner is sky |

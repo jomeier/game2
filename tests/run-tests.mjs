@@ -60,42 +60,87 @@ function readPalette() {
     },
   };
 }
-/** How much of a picture is lit window: pixels above one absolute threshold,
- * after the row's own baked value scale (FRONT_LAYER_TON) is divided out. Sprites
- * count only their covered pixels, so a tall thin tower is not punished for the
- * sky around it.
+/** Mean luminance of a picture and its share of lit windows. A window is a pixel
+ * that is warm (red over blue) AND stands out from its own picture by a clear margin
+ * over that picture's median.
+ *
+ * The margin has to be relative. An absolute brightness threshold measures the night
+ * ladder instead of the windows: the near row sits higher on the ladder by design, so
+ * its plain walls passed the threshold and the row that is meant to be the blindest
+ * measured as the blindest no more. Sprites count only covered pixels, so the sky
+ * around a tower neither darkens its mean nor dilutes its window share.
  */
-async function fensterAnteil(datei, skale, alpha = false) {
+async function lichtMass(datei, alpha = false) {
   const bild = await decodePngFile(path.join(ROOT, 'src', 'render', ...datei));
-  let helle = 0;
-  let zellen = 0;
-  for (let y = 0; y < bild.height; y += 1) {
-    for (let x = 0; x < bild.width; x += 1) {
+  const bred = bild.width;
+  const hoehe = bild.height;
+  const deckend = [];
+  const warm = [];
+  const leucht = [];
+  for (let y = 0; y < hoehe; y += 1) {
+    for (let x = 0; x < bred; x += 1) {
       const p = pixel(bild, x, y);
-      if (alpha && p[3] <= 127) continue;
-      zellen += 1;
-      if ((0.299 * p[0] + 0.587 * p[1] + 0.114 * p[2]) / skale > 150) helle += 1;
+      const bedeckt = !alpha || p[3] > 127;
+      deckend.push(bedeckt);
+      warm.push(p[0] > p[2] + 8);
+      leucht.push(bedeckt ? 0.299 * p[0] + 0.587 * p[1] + 0.114 * p[2] : 0);
     }
   }
-  return zellen === 0 ? 0 : helle / zellen;
+  const indizes = deckend.map((d, i) => (d ? i : -1)).filter((i) => i >= 0);
+  if (indizes.length === 0) throw new Error(`${datei.join('/')} has no covered pixel`);
+  // Dasselbe lokale Kriterium wie tools/comfy/nacht.mjs: ein Fenster sticht aus der
+  // unmittelbaren Nachbarschaft heraus. Ein globales Kriterium wuerde eine hell
+  // ausgeleuchtete Fassade flaechendeckend als Fenster zaehlen.
+  const werte = indizes.map((i) => leucht[i]).sort((a, b) => a - b);
+  const median = werte[Math.round(0.5 * (werte.length - 1))];
+  let helle = 0;
+  for (const i of indizes) {
+    const x = i % bred;
+    const y = (i - x) / bred;
+    let summe = 0;
+    let n = 0;
+    for (let dy = -1; dy <= 1; dy += 1) {
+      for (let dx = -1; dx <= 1; dx += 1) {
+        if (dx === 0 && dy === 0) continue;
+        const nx = x + dx;
+        const ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= bred || ny >= hoehe) continue;
+        const k = ny * bred + nx;
+        if (!deckend[k]) continue;
+        summe += leucht[k];
+        n += 1;
+      }
+    }
+    const nachbar = n > 0 ? summe / n : leucht[i];
+    if (warm[i] && leucht[i] > median + 12 && leucht[i] - nachbar > 26) helle += 1;
+  }
+  return {
+    mittel: werte.reduce((a, v) => a + v, 0) / werte.length,
+    fenster: helle / indizes.length,
+  };
 }
 
-const fernAnteil = (design) => fensterAnteil(
-  ['texturen', `${design}-far.png`], C.FRONT_LAYER_TON.far,
-);
+const fernMass = (design) => lichtMass(['texturen', `${design}-far.png`]);
 
-const spriteAnteil = (klasse, reihe) => fensterAnteil(
-  ['sprites', `${klasse.name}.png`], C.FRONT_LAYER_TON[reihe], true,
-);
+const spriteMass = (klasse) => lichtMass(['sprites', `${klasse.name}.png`], true);
 
-/** The lit windows of the three city rows, measured on the shipped files.
- * The spec wants the far row to light most of them and the near row almost none
- * (DG-P-11). Both the façades and the sprites are loaded pictures, so that order
- * has to live in the files: a brightness trick at draw time would leave the repo
- * promising something the game never ships.
+const mittel = (liste) => liste.reduce((a, m) => a + m.mittel, 0) / liste.length;
+const fenster = (liste) => liste.reduce((a, m) => a + m.fenster, 0) / liste.length;
+
+/**
+ * The night ladder and the window density of the three city rows, measured on the
+ * shipped files.
+ *
+ * Depth: this is a night scene, so a row further back is DARKER (FRONT_TIEFE in
+ * config.js is the rung each row's mean luminance has to land on). Brightness is
+ * measured, not asserted from a constant in the test, because a picture that only
+ * matches the constant in the test but not in the file would prove nothing.
+ *
+ * Windows: the spec wants the far row to light most of them and the near row almost
+ * none - a separate axis from brightness, and both have to hold in the files.
  */
 async function caseCityWindows() {
-  const gesamt = { far: 0, mid: 0, near: 0 };
+  const mess = { far: [], mid: [], near: [] };
   for (let i = 0; i < C.FRONT_DESIGNS.length; i += 1) {
     const [design] = C.FRONT_DESIGNS[i];
     // A texture that outgrew its tile box would stretch on a building. The atlas
@@ -108,7 +153,7 @@ async function caseCityWindows() {
       throw new Error(`${design}-far.png is ${bild.width}x${bild.height}, the tile box `
         + `says ${w}x${h}`);
     }
-    gesamt.far += await fernAnteil(design);
+    mess.far.push(await fernMass(design));
   }
   for (const [liste, schlussel] of [[C.SPRITE_MITTE, 'mid'], [C.SPRITE_VORNE, 'near']]) {
     for (const klasse of liste) {
@@ -125,19 +170,37 @@ async function caseCityWindows() {
       if (oben > sprite.width * 0.25) {
         throw new Error(`${klasse.name} covers ${oben} px of its top row: a flat roof`);
       }
-      gesamt[schlussel] += await spriteAnteil(klasse, schlussel);
+      mess[schlussel].push(await spriteMass(klasse));
     }
   }
-  const pro = {
-    far: gesamt.far / C.FRONT_DESIGNS.length,
-    mid: gesamt.mid / C.SPRITE_MITTE.length,
-    near: gesamt.near / C.SPRITE_VORNE.length,
+  const tied = {
+    far: mittel(mess.far), mid: mittel(mess.mid), near: mittel(mess.near),
   };
-  if (!(pro.far > pro.mid && pro.mid > pro.near)) {
-    throw new Error(`lit share does not fall to the front: far ${(pro.far * 100).toFixed(2)}% `
-      + `mid ${(pro.mid * 100).toFixed(2)}% near ${(pro.near * 100).toFixed(2)}%`);
+  if (!(tied.far < tied.mid && tied.mid < tied.near)) {
+    throw new Error(`the night ladder is upside down: far ${tied.far.toFixed(0)} `
+      + `mid ${tied.mid.toFixed(0)} near ${tied.near.toFixed(0)} (a further row is darker)`);
   }
-  if (pro.far < 0.01) throw new Error(`the far row lights only ${(pro.far * 100).toFixed(2)}%`);
+  // The rungs themselves come from FRONT_TIEFE, so the check is the ratio between
+  // rows rather than a luminance copied into the test: a game that never renders a
+  // row could otherwise pass by shipping any three means in the right order.
+  const staffel = (a, b) => tied[a] / tied[b];
+  const gewollt = (a, b) => C.FRONT_TIEFE[a] / C.FRONT_TIEFE[b];
+  for (const [a, b] of [['far', 'mid'], ['mid', 'near'], ['far', 'near']]) {
+    const ist = staffel(a, b);
+    const soll = gewollt(a, b);
+    if (Math.abs(ist - soll) > 0.2) {
+      throw new Error(`the ${a} row sits at ${(ist * 100).toFixed(0)}% of the ${b} row, `
+        + `the ladder in config.js says ${(soll * 100).toFixed(0)}%`);
+    }
+  }
+  const dichte = {
+    far: fenster(mess.far), mid: fenster(mess.mid), near: fenster(mess.near),
+  };
+  if (!(dichte.far > dichte.mid && dichte.mid > dichte.near)) {
+    throw new Error(`lit share does not fall to the front: far ${(dichte.far * 100).toFixed(2)}% `
+      + `mid ${(dichte.mid * 100).toFixed(2)}% near ${(dichte.near * 100).toFixed(2)}%`);
+  }
+  if (dichte.far < 0.01) throw new Error(`the far row lights only ${(dichte.far * 100).toFixed(2)}%`);
 }
 
 const state = (page) => page.evaluate(() => window.__game.state);
@@ -602,12 +665,16 @@ async function caseHeroHead(page) {
   await page.keyboard.down('KeyD');
   await sleep(280);
   const caps = [];
-  const deadline = Date.now() + 2500;
+  // The budget is the screenshot, not the animation: every candidate costs one canvas
+  // capture, and a capture plus its PNG encode takes a good part of a second. Six run
+  // frames at 12 Hz are on screen within half a second, so the old 2500 ms budget
+  // simply did not afford six captures.
+  const deadline = Date.now() + 12000;
   const seen = new Set();
   while (Date.now() < deadline && seen.size < 6) {
     const image = await probeShot(page, 'probe-head.png');
     const frame = await page.evaluate(() => Math.floor(window.__game.state.time * 12) % 6);
-    if (seen.has(frame)) { await sleep(30); continue; }
+    if (seen.has(frame)) continue;
     seen.add(frame);
     const where = await page.evaluate(() => ({ x: window.__game.state.player.x,
       y: window.__game.state.player.y }));

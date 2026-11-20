@@ -144,9 +144,9 @@ export function buildCity(seed, levelWidth) {
     // the skyline is a rhythm of shapes instead of a row of flat boxes.
     buildLayer(seed + 101, C.PARALLAX.mid, C.SPRITE_MITTE.map((k) => k.name), span, 18, 52,
       { spriten: true, props }),
-    // The near row is the dark strip at the bottom of the picture: short sprites
-    // (112 and 160 px) with room between them, so the mid towers stay visible above
-    // it and the mass never fuses into one wall.
+    // The near row stands closest and sits highest on the night ladder, with room
+    // between its houses so the mid towers stay visible and the mass never fuses
+    // into one wall.
     buildLayer(seed + 202, C.PARALLAX.near, C.SPRITE_VORNE.map((k) => k.name), span, 80, 180,
       { spriten: true }),
   ];

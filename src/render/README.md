@@ -102,18 +102,18 @@ distance for an enemy, so no module keeps animation state.
   a slab grid, art-deco ribs, arched gothic, moderne bands, bay windows, a brick
   tenement with fire escapes, corniced storeys, broad piers, a lit chequer, and
   brutalist slits. Each design keeps one colour personality (base, warm, or cool)
-  while the row owns the value steps, so ten different towers still read as one
-  distance. `CITY_FRONTS` names the tile of a design, and the row's value step
-  (`FRONT_LAYER_TON`) and lit-window share are baked into the PNG rather than
-  applied while drawing.
+  while the row owns the rung on the night ladder, so ten different towers still read
+  as one distance. `CITY_FRONTS` names the tile of a design, and the row's rung
+  (`FRONT_TIEFE`) and lit-window share are baked into the PNG rather than applied
+  while drawing.
 - The mid row and the near row are sprites: `SPRITE_MITTE` and `SPRITE_VORNE` in
   [../config.js](../config.js) hold the twelve designs and their size classes
-  (`SPRITE_KLASSEN`: 128 x 192 and 128 x 256 for the mid row, 128 x 112 and 128 x 160
-  for the short near row). A sprite owns its whole silhouette, so the building box
+  (`SPRITE_KLASSEN`: 128 x 192 and 128 x 256 for the mid row, 128 x 160 and
+  128 x 208 for the near row). A sprite owns its whole silhouette, so the building box
   **is** the sprite box - nothing is tiled, nothing is stretched, and nothing is
   painted over it: the crown, the outline and the lit roof edge live in the art.
-  A sprite carries alpha, so its cell is not opaque, and its row's value step is
-  baked into the file like the far row's.
+  A sprite carries alpha, so its cell is not opaque, and its row's rung on the night
+  ladder (`FRONT_TIEFE`) is baked into the file like the far row's.
 - Each paint job carries a clip box and may only write inside its own atlas cell.
   Before the allocator existed, the stone mortar bled into the dirt cell and made
   the ground read blue.

@@ -60,7 +60,13 @@ function enemyFrame(atlas, frames, enemy) {
 
 /** Return a new renderer for one canvas. */
 export async function createRenderer(canvas) {
-  const gl = canvas.getContext('webgl2', { alpha: false, antialias: false });
+  // preserveDrawingBuffer is not a rendering choice, it is a testing one: without it
+  // the canvas may already be cleared by the time a screenshot is taken, and a headless
+  // test that reads pixels then gets a white frame at random. That is what made
+  // hero-head and opaque-city fail in runs where the game itself was fine.
+  const gl = canvas.getContext('webgl2', {
+    alpha: false, antialias: false, preserveDrawingBuffer: true,
+  });
   if (!gl) throw new Error('WebGL2 is not available');
   const programs = createPrograms(gl);
   const atlas = await createAtlas(gl);

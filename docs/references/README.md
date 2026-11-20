@@ -97,9 +97,12 @@ the game's sky, because a soft mask edge that draws a dark seam around a house s
 invisible in a statistics line. The tool therefore drops a cell that covers less than
 a third of its source: alpha in these files is hard.
 
-The sheets again stay in the tool folder (about 8 MB). The tool multiplies the row's
-value step (`FRONT_LAYER_TON`) in while it cuts, so `tests/run-tests.mjs` can divide
-it out and measure the window density of each row on disk.
+The sheets again stay in the tool folder (about 8 MB). While it cuts, the tool
+measures each sheet's mean and scales it onto the row's rung of the night ladder
+(`FRONT_TIEFE`), so `tests/run-tests.mjs` can read both the ladder and the window
+density straight off the shipped files. `--schnitt` re-cuts the stored sheets without
+drawing them again, which is what a ladder change needs: changing the depth of a row
+must not force a new skyline.
 
 ## Reading list
 

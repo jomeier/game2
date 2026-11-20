@@ -81,9 +81,12 @@ export const CITY_SEED = 20261119;
 // model paint a needle, and a needle is not a building. The near row stays short -
 // a foreground plane is a narrow dark strip at the bottom of the picture, not a
 // second wall of towers, and the towers behind it have to stay visible.
+// The size classes per row, all 128 px wide. The near row has no short class: a
+// 112 px foreground house read as a dwarf in front of a 256 px mid tower, and a
+// foreground plane should anchor the picture rather than scramble for attention.
 export const SPRITE_KLASSEN = {
   mid: { 192: 128, 256: 128 },
-  nah: { 112: 128, 160: 128 },
+  nah: { 160: 128, 208: 128 },
 };
 const spriteKlassen = (entwurfe, klassen) => entwurfe
   .flatMap((design) => Object.entries(klassen).map(([h, w]) => ({ design, name: `${design}-${h}`, w: Number(w), h: Number(h) })));
@@ -115,13 +118,24 @@ export const TILE = {
   heartFull: [16, 16], heartSpent: [16, 16],
   propAntenna: [12, 15], propTank: [14, 13], propVent: [12, 12],
 };
-// City walls and curtain walls all share one box, so any building width that is a
-// whole number of 16 and any height that is a whole number of 32 fits exactly.
-// The value scale baked into the façade textures per city layer (DG-P-11: far the
-// lightest, near almost black). tools/comfy/fronttexturen.mjs scales by these
-// numbers when it writes the files, and the city-windows test divides them out
-// again, so "how many windows burn" is measurable in absolute terms.
-export const FRONT_LAYER_TON = { far: 1.06, mid: 0.82, near: 0.46 };
+// The far row's wall tiles all share one box.
+// How far each row sits in the night: a value ladder, not a paint step. The scene
+// is a night skyline, so distance is simulated by DARKNESS - the far row is a dark
+// mass with lights in it, the near row stands closest and brightest. The number is
+// the mean luminance a row's picture has to land on, as a share of 255.
+// tools/comfy/fronttexturen.mjs and tools/comfy/hochhaus.mjs measure each sheet's
+// own mean and scale it onto this rung, so every design of a row sits at the same
+// distance no matter how bright its sheet came out. city-windows then reads the
+// ladder straight off the shipped files - the files are the ladder.
+// No rung goes near blown-out white: the window density of a row is measured as
+// warm pixels standing out from that row's own median, and a wall at full white
+// would stop being separable from its windows at all.
+// The rungs are chosen so a sheet can reach its rung with a mild correction: the
+// tools refuse to amplify a sheet more than 1.6x, because pulling a dark sheet up
+// does not make it bright, it drags the sheet's own noise up as white speckle. A
+// row that cannot reach its rung means its art was ordered wrong, and the fix is
+// the prompt, not a bigger gain.
+export const FRONT_TIEFE = { far: 0.235, mid: 0.35, near: 0.47 };
 
 // The grid a building lands on: its width is a whole number of CITY_GRID.w and its
 // height a whole number of CITY_GRID.h, so a front texture is never stretched.

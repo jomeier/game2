@@ -17,15 +17,15 @@ texture without any stretching. `textures.js` loads these files before the first
 frame and draws each one into its cell; the only thing the atlas adds is the hue
 turn of the design's tint.
 
-Both the depth order (`DG-P-11`: far the brightest, near the darkest) and the lit
-window share live **in these files**, not in a draw-time effect, so
+Both the depth order (`DG-P-11`: this is night, so a further row sits **darker**) and
+the lit window share live **in these files**, not in a draw-time effect, so
 `tests/run-tests.mjs` can measure them on disk together with the sprites of the two
-nearer rows. The depth step is the value scale `FRONT_LAYER_TON` in
-[../../config.js](../../config.js) - far 1.06, mid 0.82, near 0.46 - which the
-generating tool multiplies in and the test divides out again before it counts lit
-windows on one absolute brightness threshold. A pull toward a flat haze tone stays
-small (3 to 5 percent): a stronger one lifted the layer mean and drowned the lit
-windows of the far layer.
+nearer rows. The rung each row has to land on is `FRONT_TIEFE` in
+[../../config.js](../../config.js), and the generating tool reaches it by measuring
+each sheet's own mean and scaling that sheet onto its rung - a row is darkened onto
+its rung, never brightened, because amplifying a dark sheet lifts its noise. No pull
+toward a flat haze tone either: a haze mix lifted the far row's mean and drowned its
+lit windows.
 
 They are not art assets from outside: each one is an isotropic crop of a sheet the
 project generated with the local ComfyUI, mirrored at its borders so the tile

@@ -358,7 +358,7 @@ five pixel font. The rules:
 | Half-texel inset | The uv rect of a tile is inset by half a texel on all four sides, so a neighbour cannot bleed in. |
 | Sprite frame strips | The hero has two idle frames, six run frames, and one frame each for a jump, a fall, and a hurt. An enemy has four shuffle frames per direction. The renderer picks the frame from `world.time` and the walk distance. |
 | Nearest filtering | `NEAREST` on both axes and no mipmaps, so tiles stay pixel-sharp. |
-| Value order | The far city layer is the brightest, the near layer the darkest. Depth comes from value steps and a warm haze band, never from alpha. |
+| Value order | The far city row is the darkest, the near row the brightest: at night, darkness is what reads as distance. Depth comes from value steps and a warm haze band, never from alpha. |
 
 **Reason.** A four-shade ramp is what makes a generated tile read as a material
 instead of as noise: the eye reads the bevel of a stone block and the joints of a
@@ -402,19 +402,21 @@ now burns or stays dark as a whole. A DOM control hint stands rejected, see
 The draw order runs sky and stars, moon, then the city layers back to front.
 Buildings cover the moon wherever they overlap it; the moon shows only in the
 gaps between silhouettes. Depth comes from the value steps, never from
-transparency. The front layer uses the darkest values, the back layers lighter
-and duller ones. The far row wears the ten front designs of `FRONT_DESIGNS` as
+transparency, and in this night scene the ladder runs downward with distance: the
+front row carries the brightest values, the back rows darker and duller ones. The far row wears the ten front designs of `FRONT_DESIGNS` as
 tiled walls; the mid row and the near row wear the twelve sprite designs of
 `SPRITE_MITTE` and `SPRITE_VORNE`, one picture per building. A shuffled deck deals
 each row's designs, so every design shows up and no two neighbours repeat, and the
 card also says which size class the building takes. Each design keeps its own
 silhouette - setbacks, spires, tanks, masts, gables - which is what gives the skyline
-the varied top edge a row of flat boxes cannot. The near row keeps the short classes:
-a foreground plane is a narrow dark strip along the bottom of the picture, and the
-mid towers have to stay visible above it. A design keeps the hue personality of
-its tint while the row owns the value steps, so the row stays one distance. For the
-pictures the value steps are numbers in `FRONT_LAYER_TON` and the generating tool
-scales them into the files, so the depth order sits in the repo rather than in a
+the varied top edge a row of flat boxes cannot. No row has a short size class: a
+dwarf in the foreground reads as a mistake, not as depth. A design keeps the hue
+personality of its tint while the row owns its rung on the ladder, so the row stays
+one distance. For the pictures that ladder is `FRONT_TIEFE`, and because the scene is
+a night scene the ladder runs **downward with distance** - the far row is a dark mass
+studded with lights, the near row stands closest and brightest. The tool measures each
+sheet's own mean and scales it onto its rung, so a sheet that came out bright cannot
+float in front of its row, and the depth order sits in the repo rather than in a
 canvas filter at draw time.
 
 **Reason.** The spec demands opaque layers and forbids the moon shining through
@@ -430,7 +432,7 @@ stacks opaque horizontal parallax bands. Sources:
 **Rejected.** Semi-transparent building layers: the moon glowing through houses
 reads as a bug. Blur-based depth of field: a blur pass costs shader time and the
 opaque rule blocks it. Glass in the near layer: that layer carries silhouette and
-no detail, and a pane grid in the darkest layer only fuses the rooftops into one
+no detail, and a pane grid in the foreground row only fuses the rooftops into one
 mass. Painted crowns stacked on a tiled wall: three tiers of a fixed 16 x 32 block
 read as a stapled box, and the art already knows how to draw a roof. A fixed step for the tall size class, such as every third block: the eye finds
 the rule within two screens and the skyline reads as a stamped pattern, so the size

@@ -59,9 +59,9 @@ before judging any picture.
 broke when the city grew a third tint per layer, because its denominator matched only
 the base ramp, and it broke again on the shipped textures: the far layer's own mean
 rises with its lit windows, so a relative threshold called the brightest layer the
-darkest. It now divides the layer's baked value scale out of `FRONT_LAYER_TON` and
-judges one absolute threshold, which is why that number lives in `config.js` and not
-only in the generating tool.
+darkest. It now judges one absolute threshold on a scale the tool has already driven
+to a rung of `FRONT_TIEFE`, which is why that ladder lives in `config.js` and the
+test measures the shipped file instead of trusting a constant.
 
 ## Geometry
 
@@ -83,13 +83,17 @@ answered that I could not see images, and kept repeating it after I had in fact 
 two random codes correctly. The fix was not a rule but a habit: run the blind test,
 then report the result - and the same habit caught the stretched tiles of `LL-10`.
 
-`LL-13` **A sampled screenshot case fails for camera reasons.** `hero-head` reported
-one run frame with 7 helmet pixels against 17 in the others, in a suite that had
-passed 21 of 21 before, and I had touched nothing near the sprite. The case samples a
-frame, reads the player position, and then cuts the helmet out of an earlier shot, so
-one slow frame and the camera offset points at an empty wall. Before hunting an art
-bug, run the suite a second time: a case that moves the world while it measures it
-needs that confirmation.
+`LL-13` **A WebGL canvas can screenshot as a white frame.** `hero-head` kept reporting
+one or two run frames with 0-7 helmet pixels while the rest showed 17, and I blamed the
+camera: the case reads the player position and crops the helmet out of a screenshot, so
+a desync seemed the obvious story. It was wrong. The real cause was the context -
+without `preserveDrawingBuffer: true` the browser may already have cleared the canvas
+when the test captures a frame, so the capture is a race and returns white at random. The proof
+arrived with `opaque-city`, which failed on the same run with "0 lit windows" over a
+screenshot whose median luminance was 255. Two costs: the flaky cases, and a lesson I
+recorded with the wrong cause, which sent me hunting the same symptom twice more. When
+pixel-reading cases fail intermittently, check what the capture can see before blaming
+what it measures.
 
 `LL-14` **A segmentation model cuts out what glows, and a matte has a direction.**
 For the house sprites I asked for a magenta backdrop and a flood fill; the model
@@ -117,3 +121,33 @@ candidate whose top row spans most of the width, or that covers over 90 % of the
 frame, is now discarded unless no crowned candidate exists at all. The tool's reject
 (> 22 % top row) is deliberately stricter than the test it feeds (25 %), so nothing
 the tool ships can fail the test.
+
+`LL-17` **A prompt has to ask for the brightness the ladder wants.** Turning the city
+into a night ladder (further row = darker) meant the foreground had to be the brightest
+row, and it would not go: I had ordered those sheets as "a dark mass with barely any
+lit windows", so reaching the top rung needed a big scale and hit the clamp - the
+foreground stayed dimmer than the row behind it. Fixing it in the tool was the wrong
+lever; the fix was the prompt for that row. Two habits came with it: normalise each
+sheet onto its row's rung by its **own** measured mean (the sheets of one row started
+at means between 12 and 62, so one multiplier per row left that row standing at
+several distances at once), and keep a re-cut path (`--schnitt`) so retuning the ladder
+never redraws the skyline.
+
+`LL-18` **A global window test deletes a floodlit facade.** To give the foreground the
+top rung at night I had to keep its lit-window share low, and I trimmed with a global
+test (warm and above the picture's own median). On a floodlit wall that test calls
+most of the wall a window, so trimming to a few percent erased the wall: the sprite
+went from mean 85 to 11 and the foreground ended up DARKER than the row behind it -
+the exact opposite of the ladder. A window is a small bright patch on darker wall, so
+the test has to be local: brighter than its own 3x3 neighbourhood. The uniform wall
+then survives untouched and only real windows get trimmed. When a filter starts
+removing large areas of the thing you want to keep, the filter's frame of reference is
+wrong, not its threshold.
+
+`LL-19` **Two per-row targets on one image need the second one measured last.** I set
+the ladder and the window share in the same pass and chased a mismatch for a while:
+either the trim moved the mean off its rung, or the ladder's scale moved the window
+count off its share (a scale stretches the distance to the median). Ordering fixed it -
+scale first, trim last, nothing after the trim - and the two numbers then hold at the
+same time. The deeper point: whatever the test measures has to be the last thing the
+tool changes before it writes the file.
